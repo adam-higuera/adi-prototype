@@ -1,16 +1,12 @@
 MPI_LIB=mpi
 MPICXX_LIB=mpi_cxx
-BOOST_MPI_LIB=boost_mpi
-
-HOME=/Users/adamvh
-BOOST_ROOT_DIR=${HOME}/Library/boost_1_50_0
-BOOST_LIB_DIR=${BOOST_ROOT_DIR}/stage/lib
+BOOST_MPI_LIB=boost_mpi-mt
 
 MPICXX=mpicxx
 
-CXXFLAGS=-I${BOOST_ROOT_DIR}
+CXXFLAGS=-I/usr/local/include -g
 
-LDFLAGS=-L${BOOST_LIB_DIR} -l${MPI_LIB} -l${MPICXX_LIB}  -l${BOOST_MPI_LIB} -framework Accelerate
+LDFLAGS=-L/usr/local/lib -l${MPI_LIB} -l${MPICXX_LIB}  -l${BOOST_MPI_LIB} -framework Accelerate
 
 tridiag: tridiag.cpp
 	${MPICXX} ${CXXFLAGS} -o $@ tridiag.cpp
