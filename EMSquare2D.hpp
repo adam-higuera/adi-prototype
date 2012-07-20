@@ -63,6 +63,7 @@ private:
   void explicitUpdateM();
 
   void TimeStep();
+  void printField(std::string msg);
 
   void dumpFields(std::string filename);
 };

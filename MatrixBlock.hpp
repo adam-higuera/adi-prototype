@@ -73,12 +73,30 @@ private:
   double diag, off_diag;
 };
 
+class EMToeplitzMatrixInitializer {
+public:
+  EMToeplitzMatrixInitializer(double diag, double off_diag) : diag (diag), off_diag (off_diag) {}
+  double operator ()(unsigned int i, which_diagonal w) const {
+	if(i == 0 && w == UPPER_DIAG)
+	  return 0;
+	switch (w) {
+	case MAIN_DIAG:
+	  return this->diag;
+	case LOWER_DIAG:
+	case UPPER_DIAG:
+	  return this->off_diag;
+	}
+  }
+private:
+  double diag, off_diag;
+};
+
 template<typename Initializer>
 MatrixBlock::MatrixBlock (mpi::communicator & world, unsigned int problem_size, Initializer init)
   : diag(NULL), upper_diag(NULL), lower_diag(NULL), world(world) {
   this->block_size = problem_size / world.size () + (world.rank () < problem_size % world.size ());
-  this->index_offset = (world.rank() - 1) * (problem_size / world.size ())
-	+ std::max(world.rank()-1, int(problem_size % world.size ()));
+  this->index_offset = world.rank() * (problem_size / world.size ())
+	+ std::max(world.rank(), int(problem_size % world.size ()));
 
   this->allocate_storage();
   this->initialize_matrix(init);
@@ -100,6 +118,9 @@ void MatrixBlock::initialize_matrix(Initializer init) {
   }
   this->coupling_to_upper = init (this->global_i_from_local (-1), UPPER_DIAG);
   this->coupling_to_lower = init (this->global_i_from_local (this->block_size-1), LOWER_DIAG);
+
+  if(world.rank() == 0)
+	std::cout << "HERP " << upper_diag[0] << std::endl;
 
   dgttrf_ (& this->block_size, this->lower_diag, this->diag,
 		   this->upper_diag, this->U_upper_diag2, this->pivot_permutations, & info);

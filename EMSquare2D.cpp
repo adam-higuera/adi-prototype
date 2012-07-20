@@ -27,13 +27,13 @@ EMSquare2D::EMSquare2D(
   Implicit_dy(x_line,
 			  n_cells,
 			  ToeplitzMatrixInitializer(
-										1 + 2.0*C*dt*dt/((2*dy)*(2*dy)),
-										-C*dt*dt/((2*dy)*(2*dy)))),
+										  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
+										  -C*C*dt*dt/((2*dy)*(2*dy)))),
   Implicit_dx(y_line,
 			  n_cells,
 			  ToeplitzMatrixInitializer(
-										1 + 2.0*C*dt*dt/((2*dy)*(2*dy)),
-										-C*dt*dt/((2*dy)*(2*dy)))) {
+										  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
+										  -C*C*dt*dt/((2*dy)*(2*dy)))) {
   E_x[0] = new double[block_size*block_size];
   E_y[0] = new double[block_size*block_size];
   B_z[0] = new double[block_size*block_size];
@@ -98,10 +98,56 @@ void EMSquare2D::dumpFields(std::string filename) {
 }
 
 void EMSquare2D::TimeStep() {
+  this->printField("Inital: ");
   this->implicitUpdateM();
+  world.barrier();
+  this->printField("Imp M: ");
   this->explicitUpdateP();
+  world.barrier();
+  this->printField("Exp P: ");
   this->implicitUpdateP();
+  world.barrier();
+  this->printField("Imp P: ");
+  world.barrier();
   this->explicitUpdateM();
+  world.barrier();
+  this->printField("Exp M: ");
+}
+
+void EMSquare2D::printField(std::string msg) {
+  if (world.rank() == 0)
+	std::cout << msg;
+  if(y_line.rank() == 0) {
+	int dummy;
+	if(x_line.rank() != 0)
+	  x_line.recv(x_line.rank() - 1, 0, dummy);
+	for(unsigned int ix=0; ix < block_size; ix++) {
+	  std::cout << E_y[ix][0] << " ";
+	}
+	std::cout.flush();
+	if (x_line.rank() == x_line.size() - 1)
+	  std::cout << std::endl;
+	else
+	  x_line.send(x_line.rank() + 1, 0, dummy);
+  }
+
+  x_line.barrier();
+
+  if (world.rank() == 0)
+	std::cout << msg;
+  if(y_line.rank() == 0) {
+	int dummy;
+	if(x_line.rank() != 0)
+	  x_line.recv(x_line.rank() - 1, 0, dummy);
+	for(unsigned int ix=0; ix < block_size; ix++) {
+	  std::cout << B_z[ix][0] << " ";
+	}
+	std::cout.flush();
+	if (x_line.rank() == x_line.size() - 1)
+	  std::cout << std::endl;
+	else
+	  x_line.send(x_line.rank() + 1, 0, dummy);
+  }  
 }
 
 void EMSquare2D::implicitUpdateP() {
@@ -109,7 +155,7 @@ void EMSquare2D::implicitUpdateP() {
   for(unsigned int ix=0; ix < this->block_size; ix++) {
 	//Build RHS of tridiagonal equation - need one B value from neighboring processor
 	for(unsigned int iy=1; iy < this->block_size; iy++) {
-	  rhs_holder[iy] = E_x[ix][iy] + C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix][iy-1]);
+	  rhs_holder[iy] = E_x[ix][iy] - C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix][iy-1]);
 	}
 	rhs_holder[0] = E_x[ix][0] - C*dt/(2*dy) * (B_z[ix][0] - this->boundary_B_in[ix]);
 
@@ -149,15 +195,15 @@ void EMSquare2D::explicitUpdateP() {
 
 void EMSquare2D::implicitUpdateM() {
 
-  if(world.rank() == 0)
-	for(unsigned int iy=0; iy < block_size; iy++)
-	  std::cout << boundary_B_in[iy] << " " << (iy == block_size - 1 ? "\n" : "");
+  // if(world.rank() == 0)
+  // 	for(unsigned int iy=0; iy < block_size; iy++)
+  // 	  std::cout << boundary_B_in[iy] << " " << (iy == block_size - 1 ? "\n" : "");
 
   this->exchange_bdy_values(x_line, BDY_X);
 
-  if(world.rank() == 0)
-	for(unsigned int iy=0; iy < block_size; iy++)
-	  std::cout << boundary_B_in[iy] << " " << (iy == block_size - 1 ? "\n" : "");
+  // if(world.rank() == 0)
+  // 	for(unsigned int iy=0; iy < block_size; iy++)
+  // 	  std::cout << boundary_B_in[iy] << " " << (iy == block_size - 1 ? "\n" : "");
 
   for(unsigned int iy=0; iy < this->block_size; iy++) {
 	// if(x_line.rank() == 0 && iy == 5)
@@ -168,41 +214,41 @@ void EMSquare2D::implicitUpdateM() {
 	}
 	rhs_holder[0] = E_y[0][iy] + C*dt/(2*dy) * (B_z[0][iy] - this->boundary_B_in[iy]);
 
-	if(y_line.rank() == 0 && iy == 0) {
-	  int dummy;
-	  if(x_line.rank() != 0)
-		x_line.recv(x_line.rank()-1, 0, dummy);
-	  else
-		std::cout << "pre-solve: ";
-	  for(int ix=0; ix < this->block_size; ix++)
-		std::cout << rhs_holder[ix] << " ";
-	  std::cout.flush();
-	  if(x_line.rank() != x_line.size()-1)
-		x_line.send(x_line.rank()+1, 0, dummy);
-	  else {
-		std::cout << std::endl;
-		x_line.send(0, 0, dummy);
-	  }
-	}
+	// if(y_line.rank() == 0 && iy == 0) {
+	//   int dummy;
+	//   if(x_line.rank() != 0)
+	// 	x_line.recv(x_line.rank()-1, 0, dummy);
+	//   else
+	// 	std::cout << "pre-solve: ";
+	//   for(int ix=0; ix < this->block_size; ix++)
+	// 	std::cout << rhs_holder[ix] << " ";
+	//   std::cout.flush();
+	//   if(x_line.rank() != x_line.size()-1)
+	// 	x_line.send(x_line.rank()+1, 0, dummy);
+	//   else {
+	// 	std::cout << std::endl;
+	// 	x_line.send(0, 0, dummy);
+	//   }
+	// }
 	
 	Implicit_dx.solve(rhs_holder);
 
-	if(y_line.rank() == 0 && iy == 0) {
-	  int dummy;
-	  if(x_line.rank() != 0)
-		x_line.recv(x_line.rank()-1, 0, dummy);
-	  else {
-		x_line.recv(x_line.size()-1, 0, dummy);
-		std::cout << "post-solve: ";
-	  }
-	  for(int ix=0; ix < this->block_size; ix++)
-		std::cout << rhs_holder[ix] << " ";
-	  std::cout.flush();
-	  if(x_line.rank() != x_line.size()-1)
-		x_line.send(x_line.rank()+1, 0, dummy);
-	  else
-		std::cout << std::endl;
-	}
+	// if(y_line.rank() == 0 && iy == 0) {
+	//   int dummy;
+	//   if(x_line.rank() != 0)
+	// 	x_line.recv(x_line.rank()-1, 0, dummy);
+	//   else {
+	// 	x_line.recv(x_line.size()-1, 0, dummy);
+	// 	std::cout << "post-solve: ";
+	//   }
+	//   for(int ix=0; ix <  this->block_size; ix++)
+	// 	std::cout << rhs_holder[ix] << " ";
+	//   std::cout.flush();
+	//   if(x_line.rank() != x_line.size()-1)
+	// 	x_line.send(x_line.rank()+1, 0, dummy);
+	//   else
+	// 	std::cout << std::endl;
+	// }
 
 	// Copy solution of tridiagonal equation into E array
 	for(unsigned int ix=0; ix < this->block_size; ix++) {
@@ -224,15 +270,20 @@ void EMSquare2D::explicitUpdateM() {
   this->exchange_bdy_values(x_line, BDY_X);
   for(unsigned int iy=0; iy < this->block_size; iy++) {
 	rhs_holder[0]=E_y[0][iy];
-	E_y[0][iy]+=C*dt/(2*dy) * (B_z[0][iy] - boundary_B_in[iy]);
+	E_y[0][iy]-=C*dt/(2*dy) * (B_z[0][iy] - boundary_B_in[iy]);
 	for(unsigned int ix=1; ix < this->block_size; ix++) {
-	  rhs_holder[ix] = E_x[ix][iy];
-	  E_y[ix][iy] += C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix-1][iy]);
+	  rhs_holder[ix] = E_y[ix][iy];
+	  E_y[ix][iy] -= C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix-1][iy]);
 	}
 	for(unsigned int ix=0; ix < this->block_size-1; ix++) {
-	  B_z[ix][iy] += C*dt/(2*dy) * (E_x[ix+1][iy] - E_x[ix][iy]);
+	  B_z[ix][iy] -= C*dt/(2*dy) * (rhs_holder[ix+1] - rhs_holder[ix]);
 	}
-	B_z[this->block_size -1][iy] += C*dt/(2*dy)*(boundary_E_in[iy] - E_y[this->block_size-1][iy]);
+	// if (y_line.rank() == 0 && iy == 0)
+	//   for(unsigned int ix=0; ix < this->block_size; ix++)
+	// 	std::cout << (ix == 0 ? "rhs_holder: " : "") << rhs_holder[ix] << (ix == block_size -1 ? "\n" : " ");
+	  // std::cout << "BOUNDARY " << x_line.rank() << ": " << boundary_E_in[iy]
+	  // 			<< " " << rhs_holder[this->block_size-1] << std::endl;
+	B_z[this->block_size -1][iy] -= C*dt/(2*dy)*(boundary_E_in[iy] - rhs_holder[this->block_size-1]);
   }
 }
 
@@ -299,11 +350,11 @@ EMSquare2DInitializer::EMSquare2DInitializer(double dx, double dy, double L_x, d
 }
 
 double EMSquare2DInitializer::x(unsigned int i) {
-  return this->x_offset + i*dx;
+  return this->x_offset + (i + .5)*dx;
 }
 
 double EMSquare2DInitializer::y(unsigned int j) {
-  return this->y_offset + j*dy;
+  return this->y_offset + (j + .5)*dy;
 }
 
 TE10Initializer::TE10Initializer(double dx, double dy, double L_x, double L_y,
