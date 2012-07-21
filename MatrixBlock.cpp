@@ -67,6 +67,7 @@ void MatrixBlock::gather_reduced_matrix() {
 
 void MatrixBlock::allocate_storage() {
   this->diag = new double [this->block_size];
+  this->orig_diag = new double[this->block_size];
   this->upper_diag = new double [this->block_size-1];
   this->lower_diag = new double [this->block_size-1];
   this->U_upper_diag2 = new double [this->block_size-1];
@@ -158,3 +159,18 @@ void MatrixBlock::solve(double* rhs) {
   }
 }
 
+void MatrixBlock::printDiag() {
+  int dummy;
+  if(world.rank() == 0)
+    std::cout << "DIAG: ";
+  if(world.rank() != 0)
+    world.recv(world.rank() - 1, 0, dummy);
+  for(unsigned int ix=0; ix < block_size; ix++) {
+    std::cout << orig_diag[ix] << " ";
+  }
+  std::cout.flush();
+  if (world.rank() == world.size() - 1)
+    std::cout << std::endl;
+  else
+    world.send(world.rank() + 1, 0, dummy);
+}

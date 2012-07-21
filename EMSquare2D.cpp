@@ -26,16 +26,18 @@ EMSquare2D::EMSquare2D(
   B_right_bdy(new double[block_size]),
   bdy_out_buffer_topright(new double[block_size]),
   bdy_out_buffer_botleft(new double[block_size]),
-  Implicit_dy(x_line,
+  Implicit_dy(y_line,
 	      n_cells,
-	      ToeplitzMatrixInitializer(
-					1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
-					-C*C*dt*dt/((2*dy)*(2*dy)))),
-  Implicit_dx(y_line,
+	      EMToeplitzMatrixInitializer(
+					  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
+					  -C*C*dt*dt/((2*dy)*(2*dy)),
+					  n_cells)),
+  Implicit_dx(x_line,
 	      n_cells,
-	      ToeplitzMatrixInitializer(
-					1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
-					-C*C*dt*dt/((2*dy)*(2*dy)))) {
+	      EMToeplitzMatrixInitializer(
+					  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
+					  -C*C*dt*dt/((2*dy)*(2*dy)),
+					  n_cells)) {
   // Allocate storage referred to by row pointers
   // Each processor owns a block_size x block_size
   // square of cells, with the B fields at the center
@@ -170,7 +172,7 @@ void EMSquare2D::implicitUpdateP() {
   for(unsigned int ix=0; ix < this->block_size; ix++) {
     //Build RHS of tridiagonal equation - all necessary E values live on processor
     for(unsigned int iy=0; iy < this->block_size; iy++) {
-      rhs_holder[iy] = B_z[ix][iy] - C*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
+      rhs_holder[iy] = B_z[ix][iy] + C*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
 
     Implicit_dy.solve(rhs_holder);
@@ -183,13 +185,13 @@ void EMSquare2D::implicitUpdateP() {
 
   // Need B values from neighboring processors to complete E update
   this->exchange_bdy_values(y_line, BDY_Y);
-  
+
   for(unsigned int ix=0; ix < this->block_size; ix++) {
     // Update E - Need B on boundaries to do correctly
     for(unsigned int iy=0; iy < this->block_size + 1; iy++) {
       double B_above = (iy != block_size) ? B_z[ix][iy] : B_top_bdy[ix];
       double B_below = (iy != 0) ? B_z[ix][iy-1] : B_bot_bdy[ix];
-      E_x[ix][iy] += C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix][iy-1]);
+      E_x[ix][iy] += C*dt/(2*dy) * (B_above - B_below);
     }
   }
 }
@@ -212,44 +214,10 @@ void EMSquare2D::explicitUpdateP() {
 void EMSquare2D::implicitUpdateM() {
   for(unsigned int iy=0; iy < this->block_size; iy++) {
     for(unsigned int ix=0; ix < this->block_size; ix++) {
-      rhs_holder[ix] = B_z[ix][iy] + C*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
+      rhs_holder[ix] = B_z[ix][iy] - C*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
-
-    // if(y_line.rank() == 0 && iy == 0) {
-    //   int dummy;
-    //   if(x_line.rank() != 0)
-    // 	x_line.recv(x_line.rank()-1, 0, dummy);
-    //   else
-    // 	std::cout << "pre-solve: ";
-    //   for(int ix=0; ix < this->block_size; ix++)
-    // 	std::cout << rhs_holder[ix] << " ";
-    //   std::cout.flush();
-    //   if(x_line.rank() != x_line.size()-1)
-    // 	x_line.send(x_line.rank()+1, 0, dummy);
-    //   else {
-    // 	std::cout << std::endl;
-    // 	x_line.send(0, 0, dummy);
-    //   }
-    // }
-	
+    
     Implicit_dx.solve(rhs_holder);
-
-    // if(y_line.rank() == 0 && iy == 0) {
-    //   int dummy;
-    //   if(x_line.rank() != 0)
-    // 	x_line.recv(x_line.rank()-1, 0, dummy);
-    //   else {
-    // 	x_line.recv(x_line.size()-1, 0, dummy);
-    // 	std::cout << "post-solve: ";
-    //   }
-    //   for(int ix=0; ix <  this->block_size; ix++)
-    // 	std::cout << rhs_holder[ix] << " ";
-    //   std::cout.flush();
-    //   if(x_line.rank() != x_line.size()-1)
-    // 	x_line.send(x_line.rank()+1, 0, dummy);
-    //   else
-    // 	std::cout << std::endl;
-    // }
 
     // Copy solution of tridiagonal equation into B array
     for(unsigned int ix=0; ix < this->block_size; ix++) {
@@ -258,12 +226,12 @@ void EMSquare2D::implicitUpdateM() {
   }
 
   this->exchange_bdy_values(x_line, BDY_X);
-  for(unsigned int iy=0; iy < this->block_size + 1; iy++) {
+  for(unsigned int iy=0; iy < this->block_size; iy++) {
     // Update E
-    for(unsigned int ix=0; ix < this->block_size; ix++) {
+    for(unsigned int ix=0; ix < this->block_size+1; ix++) {
       double B_left = (ix != 0) ? B_z[ix-1][iy] : B_left_bdy[iy];
       double B_right = (ix != block_size) ? B_z[ix][iy] : B_right_bdy[iy];
-      E_y[ix][iy] += C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix-1][iy]);
+      E_y[ix][iy] -= C*dt/(2*dy) * (B_right - B_left);
     }
   }
 }
@@ -276,9 +244,9 @@ void EMSquare2D::explicitUpdateM() {
       B_z[ix][iy] -= C*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
     for(unsigned int ix=0; ix < this->block_size+1; ix++) {
-      double B_left = (ix != 0) ? B_z[ix-1][iy] : B_left_bdy[iy];
-      double B_right = (ix != block_size) ? B_z[ix][iy] : B_right_bdy[iy];
-      E_y[ix][iy] += C*dt/(2*dy) * (B_z[ix][iy] - B_z[ix-1][iy]);
+      double B_left = (ix != 0) ? rhs_holder[ix-1] : B_left_bdy[iy];
+      double B_right = (ix != block_size) ? rhs_holder[ix] : B_right_bdy[iy];
+      E_y[ix][iy] -= C*dt/(2*dy) * (B_right - B_left);
     }
   }
 }
@@ -292,17 +260,16 @@ void pass_vector(mpi::communicator comm,
   int dest = p + (upwards ? 1 : -1);
   int src = p + (upwards ? -1 : 1);
 
-  std::cout << "p: " << p << " " << src << " " << dest << std::endl;
 
   if(p % 2 == 0) {
-    if(src >= 0)
+    if(src >= 0 && src < n_p)
       comm.recv(src, 0, incoming, n);
-    if(dest < n_p)
+    if(dest < n_p && dest >= 0)
       comm.send(dest, 0, outgoing, n);
   } else {
-    if (dest < n_p)
+    if (dest < n_p && dest >= 0)
       comm.send(dest, 0, outgoing, n);
-    if(src >= 0)
+    if(src >= 0 && src < n_p)
       comm.recv(src, 0, incoming, n);
   }
 }
@@ -315,6 +282,10 @@ void EMSquare2D::exchange_bdy_values(mpi::communicator comm, bdy_dir dir) {
     }
     pass_vector(comm, bdy_out_buffer_topright, B_left_bdy, block_size, true);
     pass_vector(comm, bdy_out_buffer_botleft, B_right_bdy, block_size, false);
+    if(comm.rank() == 0)
+      std::copy(bdy_out_buffer_botleft, bdy_out_buffer_botleft + block_size, B_left_bdy);
+    if(comm.rank() == comm.size() - 1)
+      std::copy(bdy_out_buffer_topright, bdy_out_buffer_topright + block_size, B_right_bdy);
   } else {
     for(unsigned int ix=0; ix < this->block_size; ix++) {
       bdy_out_buffer_topright[ix] = B_z[ix][block_size-1];
@@ -322,6 +293,10 @@ void EMSquare2D::exchange_bdy_values(mpi::communicator comm, bdy_dir dir) {
     }
     pass_vector(comm, bdy_out_buffer_topright, B_bot_bdy, block_size, true);
     pass_vector(comm, bdy_out_buffer_botleft, B_top_bdy, block_size, false);
+    if(comm.rank() == 0)
+      std::copy(bdy_out_buffer_botleft, bdy_out_buffer_botleft + block_size, B_bot_bdy);
+    if(comm.rank() == comm.size() - 1)
+      std::copy(bdy_out_buffer_topright, bdy_out_buffer_topright + block_size, B_top_bdy);
   }
 }
 

@@ -16,6 +16,8 @@ public:
 
   void solve(double* rhs);
 
+  void printDiag();
+
 private:
 
   void allocate_storage ();
@@ -39,6 +41,8 @@ private:
   
   double* coupling_correction_lower;
   double* coupling_correction_upper;
+
+  double* orig_diag;
   
   double* diag;
   double* upper_diag;
@@ -75,13 +79,12 @@ private:
 
 class EMToeplitzMatrixInitializer {
 public:
-  EMToeplitzMatrixInitializer(double diag, double off_diag) : diag (diag), off_diag (off_diag) {}
+  EMToeplitzMatrixInitializer(double diag, double off_diag, unsigned int problem_size)
+    : diag (diag), off_diag (off_diag), problem_size(problem_size) {}
   double operator ()(unsigned int i, which_diagonal w) const {
-	if(i == 0 && w == UPPER_DIAG)
-	  return 0;
 	switch (w) {
 	case MAIN_DIAG:
-	  return this->diag;
+	  return (i == 0 || i == problem_size - 1) ? this->diag + this->off_diag : this->diag;
 	case LOWER_DIAG:
 	case UPPER_DIAG:
 	  return this->off_diag;
@@ -89,6 +92,7 @@ public:
   }
 private:
   double diag, off_diag;
+  unsigned int problem_size;
 };
 
 template<typename Initializer>
@@ -96,7 +100,7 @@ MatrixBlock::MatrixBlock (mpi::communicator & world, unsigned int problem_size, 
   : diag(NULL), upper_diag(NULL), lower_diag(NULL), world(world) {
   this->block_size = problem_size / world.size () + (world.rank () < problem_size % world.size ());
   this->index_offset = world.rank() * (problem_size / world.size ())
-	+ std::max(world.rank(), int(problem_size % world.size ()));
+	+ std::min(world.rank(), int(problem_size % world.size ()));
 
   this->allocate_storage();
   this->initialize_matrix(init);
@@ -110,17 +114,16 @@ template<typename Initializer>
 void MatrixBlock::initialize_matrix(Initializer init) {
   int info;
   for (unsigned int i = 0; i < this->block_size; i++) {
-	this->diag [i] = init (i, MAIN_DIAG);
-	if (i < this->block_size - 1) {
-	  this->lower_diag [i] = init (this->global_i_from_local(i), LOWER_DIAG);
-	  this->upper_diag [i] = init (this->global_i_from_local(i), UPPER_DIAG);
-	}
+    this->diag [i] = init (global_i_from_local(i), MAIN_DIAG);
+    if (i < this->block_size - 1) {
+      this->lower_diag [i] = init (this->global_i_from_local(i), LOWER_DIAG);
+      this->upper_diag [i] = init (this->global_i_from_local(i), UPPER_DIAG);
+    }
   }
   this->coupling_to_upper = init (this->global_i_from_local (-1), UPPER_DIAG);
   this->coupling_to_lower = init (this->global_i_from_local (this->block_size-1), LOWER_DIAG);
 
-  if(world.rank() == 0)
-	std::cout << "HERP " << upper_diag[0] << std::endl;
+  std::copy(diag, diag + block_size, orig_diag);
 
   dgttrf_ (& this->block_size, this->lower_diag, this->diag,
 		   this->upper_diag, this->U_upper_diag2, this->pivot_permutations, & info);
