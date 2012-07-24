@@ -35,8 +35,8 @@ EMSquare2D::EMSquare2D(
   Implicit_dx(x_line,
 	      n_cells,
 	      EMToeplitzMatrixInitializer(
-					  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
-					  -C*C*dt*dt/((2*dy)*(2*dy)),
+					  1 + 2.0*C*C*dt*dt/((2*dx)*(2*dx)),
+					  -C*C*dt*dt/((2*dx)*(2*dx)),
 					  n_cells)) {
   // Allocate storage referred to by row pointers
   // Each processor owns a block_size x block_size
@@ -72,9 +72,9 @@ EMSquare2D::EMSquare2D(
 
 void EMSquare2D::simulate() {
   for(unsigned int i=0; i < n_steps; i++) {
-    if (i % 1 == 0) {
+    if (i % 9 == 0) {
       std::ostringstream filename(std::ios::out);
-      filename << "herp" << i / 1 << ".txt";
+      filename << "dump" << i / 9 << ".txt";
       this->dumpFields(filename.str());
     }
     this->TimeStep();
@@ -97,7 +97,6 @@ void EMSquare2D::dumpFields(std::string filename) {
     std::ios_base::openmode om = (world.rank() == 0 && iy == 0) ? std::ios::out : std::ios::app;
 
     std::ofstream dump(filename.c_str(), om);
-    dump << "<<" << x_line.rank() << ">>";
     for(unsigned int ix = 0; ix < block_size; ix++) {
       dump << B_z[ix][iy];
       if (ix != block_size-1 || x_line.rank() != x_line.size() - 1)
@@ -116,20 +115,10 @@ void EMSquare2D::dumpFields(std::string filename) {
 }
 
 void EMSquare2D::TimeStep() {
-  this->printField("Inital: ");
   this->implicitUpdateM();
-  world.barrier();
-  this->printField("Imp M: ");
   this->explicitUpdateP();
-  world.barrier();
-  this->printField("Exp P: ");
   this->implicitUpdateP();
-  world.barrier();
-  this->printField("Imp P: ");
-  world.barrier();
   this->explicitUpdateM();
-  world.barrier();
-  this->printField("Exp M: ");
 }
 
 void EMSquare2D::printField(std::string msg) {
@@ -204,8 +193,8 @@ void EMSquare2D::explicitUpdateP() {
       B_z[ix][iy] += C*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
     for(unsigned int iy=0; iy < this->block_size+1; iy++) {
-      double B_above = (iy != block_size) ? B_z[ix][iy] : B_top_bdy[ix];
-      double B_below = (iy != 0) ? B_z[ix][iy-1] : B_bot_bdy[ix];
+      double B_above = (iy != block_size) ? rhs_holder[iy] : B_top_bdy[ix];
+      double B_below = (iy != 0) ? rhs_holder[iy-1] : B_bot_bdy[ix];
       E_x[ix][iy] += C*dt/(2*dy) * (B_above - B_below);
     }
   }
@@ -241,12 +230,12 @@ void EMSquare2D::explicitUpdateM() {
   for(unsigned int iy=0; iy < this->block_size; iy++) {
     for(unsigned int ix=0; ix < this->block_size; ix++) {
       rhs_holder[ix] = B_z[ix][iy];
-      B_z[ix][iy] -= C*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
+      B_z[ix][iy] -= C*dt/(2*dx) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
     for(unsigned int ix=0; ix < this->block_size+1; ix++) {
       double B_left = (ix != 0) ? rhs_holder[ix-1] : B_left_bdy[iy];
       double B_right = (ix != block_size) ? rhs_holder[ix] : B_right_bdy[iy];
-      E_y[ix][iy] -= C*dt/(2*dy) * (B_right - B_left);
+      E_y[ix][iy] -= C*dt/(2*dx) * (B_right - B_left);
     }
   }
 }
@@ -311,28 +300,18 @@ EMSquare2DInitializer::EMSquare2DInitializer(double dx, double dy, double L_x, d
 }
 
 //FIXME - Really needs to be different for E and B
-double EMSquare2DInitializer::x(unsigned int i) {
+double EMSquare2DInitializer::x_for_B(unsigned int i) {
   return this->x_offset + (i + .5)*dx;
 }
 
-double EMSquare2DInitializer::y(unsigned int j) {
+double EMSquare2DInitializer::y_for_B(unsigned int j) {
   return this->y_offset + (j + .5)*dy;
 }
 
-TE10Initializer::TE10Initializer(double dx, double dy, double L_x, double L_y,
-				 unsigned int block_size, const mpi::communicator & comm)
-: EMSquare2DInitializer(dx, dy, L_x, L_y, block_size, comm) {}
-
-double TE10Initializer::E_x(unsigned int i, unsigned int j) {
-  return 0;
+double EMSquare2DInitializer::x_for_E(unsigned int i) {
+  return this->x_offset + i*dx;
 }
 
-double TE10Initializer::E_y(unsigned int i, unsigned int j) {
-  return 0;
-}
-
-double TE10Initializer::B_z(unsigned int i, unsigned int j) {
-  double x = this->x(i);
-
-  return cos(M_PI*x/L_x);
+double EMSquare2DInitializer::y_for_E(unsigned int j) {
+  return this->y_offset + j*dy;
 }

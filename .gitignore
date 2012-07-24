@@ -1,0 +1,5 @@
+*.o
+tridiagtest
+emsquare2d
+dump*
+*.dSYM

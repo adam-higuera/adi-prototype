@@ -12,8 +12,10 @@ public:
   virtual double E_y(unsigned int i, unsigned int j) = 0;
   virtual double B_z(unsigned int i, unsigned int j) = 0;
 protected:
-  double x(unsigned int i);
-  double y(unsigned int j);
+  double x_for_B(unsigned int i);
+  double y_for_B(unsigned int j);
+  double x_for_E(unsigned int i);
+  double y_for_E(unsigned int j);
   
   double dx;
   double dy;
@@ -71,11 +73,22 @@ private:
   void dumpFields(std::string filename);
 };
 
-class TE10Initializer : public EMSquare2DInitializer {
+template<int m, int n>
+class TEmnInitializer : public EMSquare2DInitializer {
 public:
-  TE10Initializer(double dx, double dy, double L_x, double L_y,
-		  unsigned int block_size, const mpi::communicator & comm);
-  virtual double E_x(unsigned int i, unsigned int j);
-  virtual double E_y(unsigned int i, unsigned int j);
-  virtual double B_z(unsigned int i, unsigned int j);
+  TEmnInitializer(double dx, double dy, double L_x, double L_y,
+		  unsigned int block_size, const mpi::communicator & comm)
+    : EMSquare2DInitializer(dx, dy, L_x, L_y, block_size, comm) {}
+  virtual double E_x(unsigned int i, unsigned int j) {
+    return 0;
+  }
+  virtual double E_y(unsigned int i, unsigned int j) {
+    return 0;
+  }
+  virtual double B_z(unsigned int i, unsigned int j) {
+    double x = this->x_for_B(i);
+    double y = this->y_for_B(j);
+
+    return cos(m*M_PI*x/L_x)*cos(n*M_PI*y/L_y);
+  }
 };
