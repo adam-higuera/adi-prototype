@@ -3,3 +3,7 @@ tridiagtest
 emsquare2d
 dump*
 *.dSYM
+CMakeCache.txt
+Makefile
+CMakeFiles
+cmake_install.cmake
