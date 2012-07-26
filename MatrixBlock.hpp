@@ -2,7 +2,11 @@
 #define MATRIX_BLOCK_H
 
 #include<boost/mpi.hpp>
-#include <Accelerate/Accelerate.h>
+
+extern "C" {
+  int dgttrf_(int*, double*, double*, double*, double*, int*, int*);
+  int dgttrs_(char*, int*, int*, double*, double*, double*, double*, int*, double*, int*, int*);
+}
 
 namespace mpi = boost::mpi;
 enum which_diagonal {MAIN_DIAG, UPPER_DIAG, LOWER_DIAG};

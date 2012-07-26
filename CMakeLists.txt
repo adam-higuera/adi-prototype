@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 2.6)
 project(adi-prototype)
 
-find_package(Boost COMPONENTS MPI REQUIRED)
+set(Boost_ADDITIONAL_VERSIONS "1.50" "1.50.0")
+
+find_package(Boost COMPONENTS mpi REQUIRED)
 find_package(MPI REQUIRED)
 find_package(LAPACK REQUIRED)
 

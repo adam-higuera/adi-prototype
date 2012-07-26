@@ -1,5 +1,9 @@
 #include "MatrixBlock.hpp"
 
+extern "C" {
+  int dgtsv_(int*, int*, double*, double*, double*, double*, int*, int*);
+}
+
 int main (int argc, char* argv []) {
   mpi::environment env (argc, argv);
   mpi::communicator world;
@@ -25,6 +29,8 @@ int main (int argc, char* argv []) {
   }
   if(world.rank() == 4)
     std::cout << std::endl << std::endl;
+
+  world.barrier();
   
   b.solve(test_rhs);
 

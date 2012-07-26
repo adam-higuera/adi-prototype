@@ -70,12 +70,14 @@ EMSquare2D::EMSquare2D(
   }
 }
 
-void EMSquare2D::simulate() {
+void EMSquare2D::simulate(unsigned int dump_periodicity, unsigned int total_dumps) {
+  unsigned int n_dumps = 0;
   for(unsigned int i=0; i < n_steps; i++) {
-    if (i % 9 == 0) {
+    if (i % dump_periodicity == 0 && n_dumps < total_dumps) {
       std::ostringstream filename(std::ios::out);
-      filename << "dump" << i / 9 << ".txt";
+      filename << "dump" << i / dump_periodicity << ".txt";
       this->dumpFields(filename.str());
+      n_dumps++;
     }
     this->TimeStep();
   }

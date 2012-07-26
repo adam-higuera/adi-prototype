@@ -31,7 +31,7 @@ public:
 	     unsigned int n_cells, unsigned int n_steps,
 	     EMSquare2DInitializer* init, mpi::communicator & world);
 
-  void simulate();
+  void simulate(unsigned int dump_periodicity=9, unsigned int total_dumps=100);
 
 private:
   mpi::communicator & world, x_line, y_line;
