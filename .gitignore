@@ -9,3 +9,12 @@ CMakeFiles
 cmake_install.cmake
 *.png
 *.gif
+*timing*
+herp
+msgs
+vgout
+*~
+*.err
+*.out
+emsquare2d-strong
+machines

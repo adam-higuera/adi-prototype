@@ -1,6 +1,6 @@
 #include "MatrixBlock.hpp"
 #include <boost/mpi.hpp>
-#define C 2.977e8
+#define LIGHTSPEED 2.977e8
 
 enum bdy_dir {BDY_X, BDY_Y};
 
@@ -31,7 +31,7 @@ public:
 	     unsigned int n_cells, unsigned int n_steps,
 	     EMSquare2DInitializer* init, mpi::communicator & world);
 
-  void simulate(unsigned int dump_periodicity=9, unsigned int total_dumps=100);
+  void simulate(bool dump=true, unsigned int dump_periodicity=9, unsigned int total_dumps=100);
 
 private:
   mpi::communicator & world, x_line, y_line;

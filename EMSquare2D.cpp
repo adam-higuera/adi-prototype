@@ -1,6 +1,8 @@
 #include "EMSquare2D.hpp"
 #include <fstream>
 #include <sstream>
+#include <iomanip>
+#include <boost/timer.hpp>
 #define _USE_MATH_DEFINES
 
 EMSquare2D::EMSquare2D(
@@ -29,14 +31,14 @@ EMSquare2D::EMSquare2D(
   Implicit_dy(y_line,
 	      n_cells,
 	      EMToeplitzMatrixInitializer(
-					  1 + 2.0*C*C*dt*dt/((2*dy)*(2*dy)),
-					  -C*C*dt*dt/((2*dy)*(2*dy)),
+					  1 + 2.0*LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dy)*(2*dy)),
+					  -LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dy)*(2*dy)),
 					  n_cells)),
   Implicit_dx(x_line,
 	      n_cells,
 	      EMToeplitzMatrixInitializer(
-					  1 + 2.0*C*C*dt*dt/((2*dx)*(2*dx)),
-					  -C*C*dt*dt/((2*dx)*(2*dx)),
+					  1 + 2.0*LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dx)*(2*dx)),
+					  -LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dx)*(2*dx)),
 					  n_cells)) {
   // Allocate storage referred to by row pointers
   // Each processor owns a block_size x block_size
@@ -70,16 +72,27 @@ EMSquare2D::EMSquare2D(
   }
 }
 
-void EMSquare2D::simulate(unsigned int dump_periodicity, unsigned int total_dumps) {
+void EMSquare2D::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps) {
   unsigned int n_dumps = 0;
+  boost::timer t;
+
+  std::cout << std::setprecision(6);
   for(unsigned int i=0; i < n_steps; i++) {
-    if (i % dump_periodicity == 0 && n_dumps < total_dumps) {
+    if (i % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
       std::ostringstream filename(std::ios::out);
       filename << "dump" << i / dump_periodicity << ".txt";
       this->dumpFields(filename.str());
       n_dumps++;
     }
-    this->TimeStep();
+    if (i % 10 == 0 && world.rank() == 0) {
+      double el = t.elapsed();
+      std::cout << el << std::endl;
+      t.restart();
+    }
+    if(world.rank() == 0) {
+      this->TimeStep();
+    } else
+      this->TimeStep();
   }
 }
 
@@ -163,7 +176,7 @@ void EMSquare2D::implicitUpdateP() {
   for(unsigned int ix=0; ix < this->block_size; ix++) {
     //Build RHS of tridiagonal equation - all necessary E values live on processor
     for(unsigned int iy=0; iy < this->block_size; iy++) {
-      rhs_holder[iy] = B_z[ix][iy] + C*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
+      rhs_holder[iy] = B_z[ix][iy] + LIGHTSPEED*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
 
     Implicit_dy.solve(rhs_holder);
@@ -182,7 +195,7 @@ void EMSquare2D::implicitUpdateP() {
     for(unsigned int iy=0; iy < this->block_size + 1; iy++) {
       double B_above = (iy != block_size) ? B_z[ix][iy] : B_top_bdy[ix];
       double B_below = (iy != 0) ? B_z[ix][iy-1] : B_bot_bdy[ix];
-      E_x[ix][iy] += C*dt/(2*dy) * (B_above - B_below);
+      E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
     }
   }
 }
@@ -192,12 +205,12 @@ void EMSquare2D::explicitUpdateP() {
   for(unsigned int ix=0; ix < this->block_size; ix++) {
     for(unsigned int iy=0; iy < this->block_size; iy++) {
       rhs_holder[iy] = B_z[ix][iy];
-      B_z[ix][iy] += C*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
+      B_z[ix][iy] += LIGHTSPEED*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
     for(unsigned int iy=0; iy < this->block_size+1; iy++) {
       double B_above = (iy != block_size) ? rhs_holder[iy] : B_top_bdy[ix];
       double B_below = (iy != 0) ? rhs_holder[iy-1] : B_bot_bdy[ix];
-      E_x[ix][iy] += C*dt/(2*dy) * (B_above - B_below);
+      E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
     }
   }
 }
@@ -205,7 +218,7 @@ void EMSquare2D::explicitUpdateP() {
 void EMSquare2D::implicitUpdateM() {
   for(unsigned int iy=0; iy < this->block_size; iy++) {
     for(unsigned int ix=0; ix < this->block_size; ix++) {
-      rhs_holder[ix] = B_z[ix][iy] - C*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
+      rhs_holder[ix] = B_z[ix][iy] - LIGHTSPEED*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
     
     Implicit_dx.solve(rhs_holder);
@@ -222,7 +235,7 @@ void EMSquare2D::implicitUpdateM() {
     for(unsigned int ix=0; ix < this->block_size+1; ix++) {
       double B_left = (ix != 0) ? B_z[ix-1][iy] : B_left_bdy[iy];
       double B_right = (ix != block_size) ? B_z[ix][iy] : B_right_bdy[iy];
-      E_y[ix][iy] -= C*dt/(2*dy) * (B_right - B_left);
+      E_y[ix][iy] -= LIGHTSPEED*dt/(2*dy) * (B_right - B_left);
     }
   }
 }
@@ -232,12 +245,12 @@ void EMSquare2D::explicitUpdateM() {
   for(unsigned int iy=0; iy < this->block_size; iy++) {
     for(unsigned int ix=0; ix < this->block_size; ix++) {
       rhs_holder[ix] = B_z[ix][iy];
-      B_z[ix][iy] -= C*dt/(2*dx) * (E_y[ix+1][iy] - E_y[ix][iy]);
+      B_z[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
     for(unsigned int ix=0; ix < this->block_size+1; ix++) {
       double B_left = (ix != 0) ? rhs_holder[ix-1] : B_left_bdy[iy];
       double B_right = (ix != block_size) ? rhs_holder[ix] : B_right_bdy[iy];
-      E_y[ix][iy] -= C*dt/(2*dx) * (B_right - B_left);
+      E_y[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (B_right - B_left);
     }
   }
 }
