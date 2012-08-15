@@ -2,6 +2,9 @@
 #include <algorithm>
 #include "MatrixBlock.hpp"
 
+//Suppress annoying warning I don't care about.
+#pragma GCC diagnostic ignored "-Wwrite-strings"
+
 MatrixBlock::~MatrixBlock () {
   delete[] this->diag;
   delete[] this->upper_diag;
@@ -90,7 +93,7 @@ void MatrixBlock::allocate_storage() {
 	this->reduced_rhs = new double*[this->block_size];
 	this->reduced_rhs[0] = new double[(2*world.size()-1)*this->block_size];
 	for(int il=0; il < this->block_size - 1; il++) {
-	  reduced_rhs[il+1] = reduced_rhs[il] + (2*world.size()-1);
+	  reduced_rhs[il+1] = reduced_rhs[il] + 2*(world.size()-1);
 	}
   } else {
 	local_reduced_rhs = new double[2*this->block_size];
@@ -189,14 +192,14 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	for(unsigned int il=0; il < this->block_size; il++) {
 	  for(unsigned int ip=0; ip < world.size(); ip++) {
 		if (ip != 0)
-		  reduced_rhs[il][2*ip-1] = local_reduced_rhs[2*world.size()*ip + 2*il];
+		  reduced_rhs[il][2*ip-1] = local_reduced_rhs[2*block_size*ip + 2*il];
 		if (ip != world.size()-1)
-		  reduced_rhs[il][2*ip] = local_reduced_rhs[2*world.size()*ip + 2*il+1];
+		  reduced_rhs[il][2*ip] = local_reduced_rhs[2*block_size*ip + 2*il+1];
 	  }
 	}
 
-	for(int ip=0; ip < world.size(); ip++)
-	  std::cout << reduced_rhs[0][2*ip] << " " << reduced_rhs[0][2*ip + 1] << " ";
+	for(int i=0; i < 72; i++)
+	  std::cout << reduced_rhs[0][i] << " ";
 	std::cout << std::endl;
 
 	dgttrs_("T", & reduced_size, & this->block_size,
@@ -208,9 +211,9 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	for(unsigned int il=0; il < this->block_size; il++) {
 	  for(unsigned int ip=0; ip < world.size(); ip++) {
 		if(ip !=0)
-		  local_reduced_rhs[2*world.size()*ip + 2*il] = reduced_rhs[il][2*ip-1];
+		  local_reduced_rhs[2*block_size*ip + 2*il] = reduced_rhs[il][2*ip-1];
 		if(ip != world.size()-1)
-		  local_reduced_rhs[2*world.size()*ip + 2*il + 1] = reduced_rhs[il][2*ip];
+		  local_reduced_rhs[2*block_size*ip + 2*il + 1] = reduced_rhs[il][2*ip];
 	  }
 	}
 
