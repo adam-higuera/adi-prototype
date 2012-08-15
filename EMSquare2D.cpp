@@ -314,7 +314,6 @@ EMSquare2DInitializer::EMSquare2DInitializer(double dx, double dy, double L_x, d
   this->y_offset = block_size*(comm.rank() / procs_per_edge)*dy;
 }
 
-//FIXME - Really needs to be different for E and B
 double EMSquare2DInitializer::x_for_B(unsigned int i) {
   return this->x_offset + (i + .5)*dx;
 }
