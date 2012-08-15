@@ -86,7 +86,14 @@ void MatrixBlock::allocate_storage() {
 	this->reduced_U_upper_diag2 = new double[2*(world.size()-1) - 1];
 	this->reduced_pivot_permutations = new int[2*(world.size()-1)];
 	// Has a zero of padding on either side so that we can use mpi::gather
-	this->reduced_rhs = new double[2*world.size()];
+	this->local_reduced_rhs = new double[2*world.size()*this->block_size];
+	this->reduced_rhs = new double*[this->block_size];
+	this->reduced_rhs[0] = new double[(2*world.size()-1)*this->block_size];
+	for(int il=0; il < this->block_size - 1; il++) {
+	  reduced_rhs[il+1] = reduced_rhs[il] + (2*world.size()-1);
+	}
+  } else {
+	local_reduced_rhs = new double[2*this->block_size];
   }
 }
 
@@ -128,15 +135,16 @@ void MatrixBlock::solve(double* rhs) {
 	int reduced_size = 2*(world.size()-1);
 	values[1] = rhs[this->block_size-1];
 	  
-	mpi::gather(world, values, 2, this->reduced_rhs, 0);
+	mpi::gather(world, values, 2, this->local_reduced_rhs, 0);
 
-	dgttrs_("T", & reduced_size, & one, this->reduced_lower_diag, this->reduced_diag, this->reduced_upper_diag,
-		   this->reduced_U_upper_diag2, this->reduced_pivot_permutations,
-		   this->reduced_rhs + 1, //There's a leading zero of padding
+	dgttrs_("T", & reduced_size, & one,
+			this->reduced_lower_diag, this->reduced_diag, this->reduced_upper_diag,
+			this->reduced_U_upper_diag2, this->reduced_pivot_permutations,
+			this->local_reduced_rhs + 1, //There's a leading zero of padding
 			& reduced_size, & info);
 
-	mpi::scatter(world, this->reduced_rhs, values, 2, 0);
-	  } else if (world.rank() == world.size()-1) {
+	mpi::scatter(world, this->local_reduced_rhs, values, 2, 0);
+  } else if (world.rank() == world.size()-1) {
 	values[0] = rhs[0];
 
 	mpi::gather(world, values, 2, 0);
@@ -155,6 +163,84 @@ void MatrixBlock::solve(double* rhs) {
 	}
 	if(world.rank() != 0) {
 	  rhs[i] -= values[0]*this->coupling_correction_upper[i];
+	}
+  }
+}
+
+void MatrixBlock::solveSeveral(double** rhs) {
+  int info;
+  dgttrs_("T", & this->block_size, & this->block_size, this->lower_diag, this->diag, this->upper_diag,
+		  this->U_upper_diag2, this->pivot_permutations,
+		  rhs[0],
+		  & this->block_size, & info);
+
+  if(world.rank() == 0) {
+	std::fill_n(this->local_reduced_rhs, 2*world.size()*this->block_size, 0);
+	int reduced_size = 2*(world.size() - 1);
+	for(unsigned int i=0; i < this->block_size; i++) {
+	  this->reduced_rhs[0][2*i + 1] = rhs[i][this->block_size-1];
+	}
+	mpi::gather(world, reduced_rhs[0], 2*this->block_size, this->local_reduced_rhs, 0);
+	std::fill_n(this->reduced_rhs[0], (2*world.size()-1)*this->block_size, 0);
+
+	for(unsigned int i=0; i < 90; i++)
+	  std::cout << local_reduced_rhs[i] << " " << std:: endl;
+	
+	for(unsigned int il=0; il < this->block_size; il++) {
+	  for(unsigned int ip=0; ip < world.size(); ip++) {
+		if (ip != 0)
+		  reduced_rhs[il][2*ip-1] = local_reduced_rhs[2*world.size()*ip + 2*il];
+		if (ip != world.size()-1)
+		  reduced_rhs[il][2*ip] = local_reduced_rhs[2*world.size()*ip + 2*il+1];
+	  }
+	}
+
+	for(int ip=0; ip < world.size(); ip++)
+	  std::cout << reduced_rhs[0][2*ip] << " " << reduced_rhs[0][2*ip + 1] << " ";
+	std::cout << std::endl;
+
+	dgttrs_("T", & reduced_size, & this->block_size,
+			this->reduced_lower_diag, this->reduced_diag, this->reduced_upper_diag,
+			this->reduced_U_upper_diag2, this->reduced_pivot_permutations,
+			this->reduced_rhs[0],
+			& reduced_size, & info);
+
+	for(unsigned int il=0; il < this->block_size; il++) {
+	  for(unsigned int ip=0; ip < world.size(); ip++) {
+		if(ip !=0)
+		  local_reduced_rhs[2*world.size()*ip + 2*il] = reduced_rhs[il][2*ip-1];
+		if(ip != world.size()-1)
+		  local_reduced_rhs[2*world.size()*ip + 2*il + 1] = reduced_rhs[il][2*ip];
+	  }
+	}
+
+	mpi::scatter(world, local_reduced_rhs, reduced_rhs[0], 2*this->block_size, 0);
+  } else {
+	std::fill_n(this->local_reduced_rhs, 2*this->block_size, 0);
+	for(unsigned int il=0; il < this->block_size; il++) {
+	  local_reduced_rhs[2*il] = rhs[il][0];
+	  if(world.rank() != world.size()-1)
+		local_reduced_rhs[2*il+1] = rhs[il][this->block_size-1];
+	}
+	
+	mpi::gather(world, local_reduced_rhs, 2*this->block_size, 0);
+	mpi::scatter(world, local_reduced_rhs, 2*this->block_size, 0);
+  }
+
+  for(int il=0; il < this->block_size; il++) {
+	for(int iv=0; iv < this->block_size; iv++) {
+	  if(world.rank() != world.size()-1) {
+		rhs[il][iv] -=
+		  world.rank() == 0 ?
+		  reduced_rhs[0][2*il+1]*this->coupling_correction_lower[iv] :
+		  local_reduced_rhs[2*il+1]*this->coupling_correction_lower[iv];
+	  }
+	  if(world.rank() != 0) {
+		rhs[il][iv] -=
+		  world.rank() == 0 ?
+		  reduced_rhs[0][2*il]*this->coupling_correction_upper[iv] :
+		  local_reduced_rhs[2*il]*this->coupling_correction_upper[iv];
+	  }
 	}
   }
 }

@@ -19,6 +19,7 @@ public:
   ~MatrixBlock();
 
   void solve(double* rhs);
+  void solveSeveral(double** rhs);
 
   void printDiag();
 
@@ -60,7 +61,9 @@ private:
   double* reduced_U_upper_diag2;
   int* reduced_pivot_permutations;
 
-  double* reduced_rhs;
+  double* local_reduced_rhs;
+  
+  double** reduced_rhs;
 
   const mpi::communicator & world;
 };

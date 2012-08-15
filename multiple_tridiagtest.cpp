@@ -10,20 +10,24 @@ int main (int argc, char* argv []) {
 
   MatrixBlock b(world, 45, ToeplitzMatrixInitializer(1, -1.0/3.0));
 
-  double test_rhs[9];
+  double* test_rhs[9];
+  double test_rhs_storage[81];
+  for(unsigned int i=0; i < 9; i++)
+	test_rhs[i] = & test_rhs_storage[9*i];
 
-  std::fill_n(test_rhs, 9, 0);
+  std::fill_n(test_rhs_storage, 27, 0);
 
-  test_rhs[0] = 1;
-  test_rhs[8] = 1;
-
+  for(int i=0; i < 9; i++) {
+	test_rhs[i][0] = 1;
+	test_rhs[i][8] = 1;
+  }
   world.barrier();
   
   int dummy;
   if (world.rank() != 0)
     world.recv(world.rank()-1, 0, dummy);
   for(int i=0; i < 9; i++) {
-    std::cout << test_rhs[i] << " ";
+    std::cout << test_rhs[0][i] << " ";
   }
   std::cout.flush();
   if (world.rank()+1 < world.size()) {
@@ -36,26 +40,29 @@ int main (int argc, char* argv []) {
 
   if(world.rank() == 0)
 	std::cout << "Entering solve!" << std::endl;
-  b.solve(test_rhs);
+
+  b.solveSeveral(test_rhs);
 
   if(world.rank() == 0)
 	std::cout << "Exiting solve!" << std::endl;
-  
-  world.barrier();
 
-  std::cout << "<<" << world.rank() << ">> ";
-  if (world.rank() != 0) 
-    world.recv(world.rank()-1, 0, dummy);
-  std::cout << "<<" << world.rank() << ">> ";
-  for(int i=0; i < 9; i++) {
-    std::cout << test_rhs[i] << " ";
+  for(int i =0; i <3; i++) {
+	world.barrier();
+
+	std::cout << "<<" << world.rank() << ">> ";
+	if (world.rank() != 0) 
+	  world.recv(world.rank()-1, 0, dummy);
+	std::cout << "<<" << world.rank() << ">> ";
+	for(int j=0; j < 9; j++) {
+	  std::cout << test_rhs[i][j] << " ";
+	}
+	std::cout.flush();
+	if (world.rank()+1 < world.size()) {
+	  world.send(world.rank()+1, 0, dummy);
+	}
+	if(world.rank() == 4)
+	  std::cout << std::endl << std::endl;
   }
-  std::cout.flush();
-  if (world.rank()+1 < world.size()) {
-    world.send(world.rank()+1, 0, dummy);
-  }
-  if(world.rank() == 4)
-    std::cout << std::endl << std::endl;
 
   if(world.rank() == 4) {
     double herp[45];
