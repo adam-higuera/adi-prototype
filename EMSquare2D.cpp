@@ -40,6 +40,10 @@ EMSquare2D::EMSquare2D(
 					  1 + 2.0*LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dx)*(2*dx)),
 					  -LIGHTSPEED*LIGHTSPEED*dt*dt/((2*dx)*(2*dx)),
 					  n_cells)) {
+  this->allocate_fields(init);
+}
+
+void EMSquare2D::allocate_fields(EMSquare2DInitializer* init) {
   // Allocate storage referred to by row pointers
   // Each processor owns a block_size x block_size
   // square of cells, with the B fields at the center
@@ -69,7 +73,7 @@ EMSquare2D::EMSquare2D(
   }
   for(unsigned int iy = 0; iy < block_size; iy++) {
     E_y[block_size][iy] = init->E_y(block_size, iy); // Initialize right edge
-  }
+  }  
 }
 
 void EMSquare2D::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps) {
@@ -187,6 +191,10 @@ void EMSquare2D::implicitUpdateP() {
     }
   }
 
+  this->implicitPSubstituteB();
+}
+
+void EMSquare2D::implicitPSubstituteB() {
   // Need B values from neighboring processors to complete E update
   this->exchange_bdy_values(y_line, BDY_Y);
 
@@ -229,6 +237,10 @@ void EMSquare2D::implicitUpdateM() {
     }
   }
 
+  this->implicitMSubstituteB();
+}
+
+void EMSquare2D::implicitMSubstituteB() {
   this->exchange_bdy_values(x_line, BDY_X);
   for(unsigned int iy=0; iy < this->block_size; iy++) {
     // Update E

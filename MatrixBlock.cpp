@@ -186,9 +186,6 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	mpi::gather(world, reduced_rhs[0], 2*this->block_size, this->local_reduced_rhs, 0);
 	std::fill_n(this->reduced_rhs[0], (2*world.size()-1)*this->block_size, 0);
 
-	for(unsigned int i=0; i < 90; i++)
-	  std::cout << local_reduced_rhs[i] << " " << std:: endl;
-	
 	for(unsigned int il=0; il < this->block_size; il++) {
 	  for(unsigned int ip=0; ip < world.size(); ip++) {
 		if (ip != 0)
@@ -197,10 +194,6 @@ void MatrixBlock::solveSeveral(double** rhs) {
 		  reduced_rhs[il][2*ip] = local_reduced_rhs[2*block_size*ip + 2*il+1];
 	  }
 	}
-
-	for(int i=0; i < 72; i++)
-	  std::cout << reduced_rhs[0][i] << " ";
-	std::cout << std::endl;
 
 	dgttrs_("T", & reduced_size, & this->block_size,
 			this->reduced_lower_diag, this->reduced_diag, this->reduced_upper_diag,

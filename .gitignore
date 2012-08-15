@@ -17,4 +17,7 @@ vgout
 *.err
 *.out
 emsquare2d-strong
+emsquare2d-strong-large
+multitridiagtest
+.DS_Store
 machines

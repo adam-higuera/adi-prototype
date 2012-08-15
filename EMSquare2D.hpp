@@ -33,7 +33,7 @@ public:
 
   void simulate(bool dump=true, unsigned int dump_periodicity=9, unsigned int total_dumps=100);
 
-private:
+protected:
   mpi::communicator & world, x_line, y_line;
 
   unsigned int block_size, n_steps;
@@ -59,13 +59,18 @@ private:
   MatrixBlock Implicit_dy;
   MatrixBlock Implicit_dx;
 
+  void allocate_fields(EMSquare2DInitializer* init);
+
   double get_bdy_B_z(mpi::communicator comm);
   void exchange_bdy_values(mpi::communicator comm, bdy_dir dir);
 
-  void implicitUpdateM();
-  void explicitUpdateP();
-  void implicitUpdateP();
-  void explicitUpdateM();
+  virtual void implicitUpdateM();
+  virtual void explicitUpdateP();
+  virtual void implicitUpdateP();
+  virtual void explicitUpdateM();
+
+  void implicitMSubstituteB();
+  void implicitPSubstituteB();
 
   void TimeStep();
   void printField(std::string msg);
