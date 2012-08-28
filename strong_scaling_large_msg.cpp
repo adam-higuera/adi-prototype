@@ -22,6 +22,6 @@ int main(int argc, char* argv []) {
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_cells = block_size*static_cast<unsigned int>(sqrt(world.size()));
   TEmnInitializer<1,1> init(.1/n_cells, .1/n_cells, .1, .1, block_size, world);
-  largeMsgEMSquare2D the_simulation(.1, .1, 5e-8, n_cells, 1000, & init, world);
+  largeMsgEMSquare2D the_simulation(.1, .1, 5e-8, n_cells, 10000, & init, world);
   the_simulation.simulate(false);
 }

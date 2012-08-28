@@ -41,8 +41,9 @@ private:
   double coupling_from_lower, coupling_from_upper;
 
   void compute_coupling_corrections();
-
   void gather_reduced_matrix();
+
+  void transpose_reduced_rhs_storage();
   
   double* coupling_correction_lower;
   double* coupling_correction_upper;

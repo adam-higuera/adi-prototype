@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <boost/timer.hpp>
+#include <sys/time.h>
 #define _USE_MATH_DEFINES
 
 EMSquare2D::EMSquare2D(
@@ -78,7 +79,8 @@ void EMSquare2D::allocate_fields(EMSquare2DInitializer* init) {
 
 void EMSquare2D::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps) {
   unsigned int n_dumps = 0;
-  boost::timer t;
+  timeval t1, t2;
+  gettimeofday(& t1, NULL);
 
   std::cout << std::setprecision(6);
   for(unsigned int i=0; i < n_steps; i++) {
@@ -88,15 +90,13 @@ void EMSquare2D::simulate(bool dump, unsigned int dump_periodicity, unsigned int
       this->dumpFields(filename.str());
       n_dumps++;
     }
-    if (i % 10 == 0 && world.rank() == 0) {
-      double el = t.elapsed();
-      std::cout << el << std::endl;
-      t.restart();
+    if (i % 100 == 0 && world.rank() == 0) {
+      gettimeofday(& t2, NULL);
+      std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
+      // t.restart();
+      t1=t2;
     }
-    if(world.rank() == 0) {
-      this->TimeStep();
-    } else
-      this->TimeStep();
+    this->TimeStep();
   }
 }
 

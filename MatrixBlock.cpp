@@ -170,6 +170,51 @@ void MatrixBlock::solve(double* rhs) {
   }
 }
 
+// MPI fills buffers with all of the data from an individual processor contiguous in memory.
+// Thus, the right-hand sides of each equation are not contiguous in memory.  This function
+// copies the data from MPI into a new buffer where they are.
+void MatrixBlock::rank_ord_to_line_ord(double** ro_buf, double** lo_buf) {
+  for(unsigned int il=0; il < this->block_size; il++) {
+    for(unsigned int ip=0; ip < world.size(); ip++) {
+      if (ip != 0)
+	lo_buf[il][2*ip-1] = ro_buf[2*block_size*ip + 2*il];
+      if (ip != world.size()-1)
+	lo_buf[il][2*ip] = ro_buf[2*block_size*ip + 2*il+1];
+    }
+  }
+}
+
+// The equations solved
+void MatrixBlock::line_ord_to_rank_ord(double** lo_buf, double** ro_buf) {
+  for(unsigned int il=0; il < this->block_size; il++) {
+    for(unsigned int ip=0; ip < world.size(); ip++) {
+      if(ip !=0)
+	ro_buf[2*block_size*ip + 2*il] = lo_buf[il][2*ip-1];
+      if(ip != world.size()-1)
+	ro_buf[2*block_size*ip + 2*il + 1] = lo_buf[il][2*ip];
+    }
+  }
+}
+
+void MatrixBlock::apply_correction_to_several() {
+  for(int il=0; il < this->block_size; il++) {
+    for(int iv=0; iv < this->block_size; iv++) {
+      if(world.rank() != world.size()-1) {
+	rhs[il][iv] -=
+	  world.rank() == 0 ?
+	  reduced_rhs[0][2*il+1]*this->coupling_correction_lower[iv] :
+	  local_reduced_rhs[2*il+1]*this->coupling_correction_lower[iv];
+      }
+      if(world.rank() != 0) {
+	rhs[il][iv] -=
+	  world.rank() == 0 ?
+	  reduced_rhs[0][2*il]*this->coupling_correction_upper[iv] :
+	  local_reduced_rhs[2*il]*this->coupling_correction_upper[iv];
+      }
+    }
+  }
+}
+
 void MatrixBlock::solveSeveral(double** rhs) {
   int info;
   dgttrs_("T", & this->block_size, & this->block_size, this->lower_diag, this->diag, this->upper_diag,
@@ -186,29 +231,15 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	mpi::gather(world, reduced_rhs[0], 2*this->block_size, this->local_reduced_rhs, 0);
 	std::fill_n(this->reduced_rhs[0], (2*world.size()-1)*this->block_size, 0);
 
-	for(unsigned int il=0; il < this->block_size; il++) {
-	  for(unsigned int ip=0; ip < world.size(); ip++) {
-		if (ip != 0)
-		  reduced_rhs[il][2*ip-1] = local_reduced_rhs[2*block_size*ip + 2*il];
-		if (ip != world.size()-1)
-		  reduced_rhs[il][2*ip] = local_reduced_rhs[2*block_size*ip + 2*il+1];
-	  }
-	}
+	this->rank_ord_to_line_ord(local_reduced_rhs, reduced_rhs);
 
 	dgttrs_("T", & reduced_size, & this->block_size,
 			this->reduced_lower_diag, this->reduced_diag, this->reduced_upper_diag,
 			this->reduced_U_upper_diag2, this->reduced_pivot_permutations,
 			this->reduced_rhs[0],
 			& reduced_size, & info);
-
-	for(unsigned int il=0; il < this->block_size; il++) {
-	  for(unsigned int ip=0; ip < world.size(); ip++) {
-		if(ip !=0)
-		  local_reduced_rhs[2*block_size*ip + 2*il] = reduced_rhs[il][2*ip-1];
-		if(ip != world.size()-1)
-		  local_reduced_rhs[2*block_size*ip + 2*il + 1] = reduced_rhs[il][2*ip];
-	  }
-	}
+	
+	this->line_ord_to_rank_ord(reduced_size, local_reduced_rhs);
 
 	mpi::scatter(world, local_reduced_rhs, reduced_rhs[0], 2*this->block_size, 0);
   } else {
@@ -222,23 +253,7 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	mpi::gather(world, local_reduced_rhs, 2*this->block_size, 0);
 	mpi::scatter(world, local_reduced_rhs, 2*this->block_size, 0);
   }
-
-  for(int il=0; il < this->block_size; il++) {
-	for(int iv=0; iv < this->block_size; iv++) {
-	  if(world.rank() != world.size()-1) {
-		rhs[il][iv] -=
-		  world.rank() == 0 ?
-		  reduced_rhs[0][2*il+1]*this->coupling_correction_lower[iv] :
-		  local_reduced_rhs[2*il+1]*this->coupling_correction_lower[iv];
-	  }
-	  if(world.rank() != 0) {
-		rhs[il][iv] -=
-		  world.rank() == 0 ?
-		  reduced_rhs[0][2*il]*this->coupling_correction_upper[iv] :
-		  local_reduced_rhs[2*il]*this->coupling_correction_upper[iv];
-	  }
-	}
-  }
+  this->apply_correction_to_several();
 }
 
 void MatrixBlock::printDiag() {
