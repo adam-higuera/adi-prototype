@@ -24,7 +24,6 @@
                          (str "-Nemsquare2d" domain-size "_" edge-procs)
                          "/scr_verus/avh/Development/adi-prototype/qsemsquare2d-strong.q"))
 
-(doseq [domain-size [250 500 1000 2000]
+(doseq [domain-size [10 20 30 40 50]
         edge-procs [3 4 5 6 7 8 9 10]]
   (println (submit-job domain-size edge-procs)))
-
