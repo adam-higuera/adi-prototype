@@ -74,7 +74,8 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> 
   }
 
   for(unsigned int ip=0; ip < world.size(); ip++) {
-    mpi::scatter(world, recvbuf, sendbuf, 2*numLocalSolves, ip);
+    unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
+    mpi::scatter(world, recvbuf, sendbuf, 2*n_l_ip, ip);
 
     for(unsigned int il=0; il*world.size() + ip < blockSize; il++) {
       red_rhss[il*world.size() + ip]->getLocalPart()[0] = sendbuf[2*il];
