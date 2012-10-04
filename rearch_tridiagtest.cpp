@@ -12,11 +12,12 @@ int main (int argc, char* argv []) {
 
   std::vector<AbstractMatrixInitializer*> mat_inits(5, new ToeplitzMatrixInitializer(1, -1.0/3.0));
   std::vector<AbstractCouplingInitializer*> coupling_inits(5, new VacuumCouplingInitializer(mat_inits[0], 5, world));
-  RHSCollection rhsColl(mat_inits, coupling_inits, 5, world);
+  CollectiveRHSCollection rhsColl(mat_inits, coupling_inits, 5, world);
   
   double* storage = new double[25];
   double** RHSs = new double*[5];
   for(unsigned int i = 0; i < 5; i++) RHSs[i] = &storage[5*i];
+  std::fill_n(storage, 25, 0);
   for(unsigned int i = 0; i < 5; i++) RHSs[i][0] = 1;//RHSs[i][4] = 1;
 
   rhsColl.doLines(RHSs);
@@ -24,7 +25,8 @@ int main (int argc, char* argv []) {
   for(unsigned int ip=0; ip < world.size(); ip++) {
     if (world.rank() == ip)
       for(unsigned int i = 0; i < 5; i++)
-	std::cout << RHSs[0][i] << " ";
+  	std::cout << RHSs[0][i] << " ";
+    std::cout.flush();
     world.barrier();
   }
 

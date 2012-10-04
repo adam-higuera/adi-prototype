@@ -17,10 +17,10 @@ private:
 class AbstractRHSCollection {
 public:
   AbstractRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
-						std::vector<AbstractCouplingInitializer*> coupling_inits,
-						unsigned int block_size,
-						mpi::communicator& world);
-  void doLines(double** theLines);
+			std::vector<AbstractCouplingInitializer*> coupling_inits,
+			unsigned int block_size,
+			mpi::communicator& world);
+  virtual void doLines(double** theLines)=0;
 
   ReducedRHSFactory theFactory;
   unsigned int blockSize;
@@ -36,13 +36,14 @@ public:
 
 class CollectiveRHSCollection : public AbstractRHSCollection {
 public:
-  RHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+  CollectiveRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
 		std::vector<AbstractCouplingInitializer*> coupling_inits,
 		unsigned int block_size,
 		mpi::communicator& world);
 
   void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
   void dumpLine(unsigned int il, mpi::communicator& world);
+  void doLines(double** theLines);
 private:
   double* sendbuf;
   double* recvbuf;

@@ -1,7 +1,6 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
-#include "RHSCommunicator.hpp"
 #include "RHSCollection.hpp"
 #include <iostream>
 
@@ -57,8 +56,8 @@ protected:
   double* BdyOutBufferTopRight;
   double* BdyOutBufferBotLeft;
 
-  RHSCollection* xUpdateRHSs;
-  RHSCollection* yUpdateRHSs;
+  CollectiveRHSCollection* xUpdateRHSs;
+  CollectiveRHSCollection* yUpdateRHSs;
 
   void allocate_fields(SimulationInitializer* init);
 

@@ -49,10 +49,8 @@ Simulation::Simulation(
   std::vector<AbstractCouplingInitializer*> coupling_inits_x(blockSize, & coupling_init_x);
   std::vector<AbstractCouplingInitializer*> coupling_inits_y(blockSize, & coupling_init_y);
   
-  xUpdateRHSs = new RHSCollection(mat_inits_x, coupling_inits_x,
-				  new CollectiveRHSCommunicator(xLine, blockSize), blockSize, xLine);
-  yUpdateRHSs = new RHSCollection(mat_inits_y, coupling_inits_y,
-				  new CollectiveRHSCommunicator(yLine, blockSize), blockSize, yLine);
+  xUpdateRHSs = new CollectiveRHSCollection(mat_inits_x, coupling_inits_x, blockSize, xLine);
+  yUpdateRHSs = new CollectiveRHSCollection(mat_inits_y, coupling_inits_y, blockSize, yLine);
   this->allocate_fields(init);
 }
 
