@@ -41,13 +41,7 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
 
 void CollectiveRHSCollection::doLines(double** theLines) {
   for(unsigned int il=0; il < blockSize; il++) {
-    for(int i = 0; i < 5; i++)
-      std::cout << theLines[il][i] << " ";
-    std::cout << " " << world.rank() << std::endl;
     solvers[il]->solve(theLines[il]);
-    for(int i = 0; i < 5; i++)
-      std::cout << theLines[il][i] << " ";
-    std::cout << " " << world.rank() << std::endl;
     redRHSs[il]->getLocalPart()[0] = theLines[il][0];
     redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
   }
