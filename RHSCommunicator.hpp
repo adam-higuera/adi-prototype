@@ -29,12 +29,6 @@ public:
   void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
 
 private:
-  mpi::communicator& world;
-  unsigned int numLocalSolves;
-  unsigned int blockSize;
-  
-  double* sendbuf;
-  double* recvbuf;
 };
 
 #endif

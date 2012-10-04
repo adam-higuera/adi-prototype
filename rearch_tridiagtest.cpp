@@ -1,7 +1,6 @@
 #include "MatrixInitializer.hpp"
 #include "CouplingInitializer.hpp"
 #include "RHSCollection.hpp"
-#include "RHSCommunicator.hpp"
 
 extern "C" {
   int dgtsv_(int*, int*, double*, double*, double*, double*, int*, int*);
@@ -13,7 +12,7 @@ int main (int argc, char* argv []) {
 
   std::vector<AbstractMatrixInitializer*> mat_inits(5, new ToeplitzMatrixInitializer(1, -1.0/3.0));
   std::vector<AbstractCouplingInitializer*> coupling_inits(5, new VacuumCouplingInitializer(mat_inits[0], 5, world));
-  RHSCollection rhsColl(mat_inits, coupling_inits, new CollectiveRHSCommunicator(world, 5), 5, world);
+  RHSCollection rhsColl(mat_inits, coupling_inits, 5, world);
   
   double* storage = new double[25];
   double** RHSs = new double*[5];

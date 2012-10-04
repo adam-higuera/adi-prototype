@@ -14,25 +14,38 @@ private:
   mpi::communicator& world;
 };
 
-class RHSCollection {
+class AbstractRHSCollection {
 public:
-  RHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
-		std::vector<AbstractCouplingInitializer*> coupling_inits,
-		AbstractRHSCommunicator* the_comm,
-		unsigned int block_size,
-		mpi::communicator& world);
+  AbstractRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						std::vector<AbstractCouplingInitializer*> coupling_inits,
+						unsigned int block_size,
+						mpi::communicator& world);
   void doLines(double** theLines);
-  void dumpLine(unsigned int il, mpi::communicator& world);
-private:
+
   ReducedRHSFactory theFactory;
-  
+  unsigned int blockSize;
+  mpi::communicator& world;
+  unsigned int numLocalSolves;
+
   std::vector<TDCoupling*> couplings;
   std::vector<LocalSolver*> solvers;
   std::vector<AbstractReducedRHS*> redRHSs;
-  AbstractRHSCommunicator* theComm;
-  unsigned int blockSize;
 
   double** rhsStorage;
+};
+
+class CollectiveRHSCollection : public AbstractRHSCollection {
+public:
+  RHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+		std::vector<AbstractCouplingInitializer*> coupling_inits,
+		unsigned int block_size,
+		mpi::communicator& world);
+
+  void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
+  void dumpLine(unsigned int il, mpi::communicator& world);
+private:
+  double* sendbuf;
+  double* recvbuf;
 };
 
 #endif
