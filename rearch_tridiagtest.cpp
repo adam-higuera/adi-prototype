@@ -12,7 +12,7 @@ int main (int argc, char* argv []) {
 
   std::vector<AbstractMatrixInitializer*> mat_inits(5, new ToeplitzMatrixInitializer(1, -1.0/3.0));
   std::vector<AbstractCouplingInitializer*> coupling_inits(5, new VacuumCouplingInitializer(mat_inits[0], 5, world));
-  CollectiveRHSCollection rhsColl(mat_inits, coupling_inits, 5, world);
+  NonBlockingRHSCollection rhsColl(mat_inits, coupling_inits, 5, world);
   
   double* storage = new double[25];
   double** RHSs = new double*[5];

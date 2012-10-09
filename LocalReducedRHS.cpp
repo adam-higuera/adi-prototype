@@ -55,11 +55,6 @@ void LocalReducedRHS::copyValues(double* buf, unsigned int il, unsigned int n_l_
     if(ip != world.size() - 1)
       rhsStorage[2*ip] = buf[2*n_l_ip*ip + 2*(il / world.size())+1];
   }
-  // if(il == 0) {
-  //   std::cout << "WHAT LIVES IN RHS_STORAGE!";
-  //   for(unsigned int i = 0; i < reducedSize; i++) std::cout << rhsStorage[i] << " ";
-  //   std::cout << std::endl;
-  // }
 }
 
 void LocalReducedRHS::writeValues(double* buf, unsigned int il, unsigned int n_l_ip) {
