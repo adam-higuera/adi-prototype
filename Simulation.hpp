@@ -11,6 +11,10 @@ public:
   virtual double E_x(unsigned int i, unsigned int j) = 0;
   virtual double E_y(unsigned int i, unsigned int j) = 0;
   virtual double B_z(unsigned int i, unsigned int j) = 0;
+  virtual AbstractRHSCollection* initCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						std::vector<AbstractCouplingInitializer*> c_inits,
+						unsigned int block_size,
+						mpi::communicator& comm)=0;
 protected:
   double x_for_B(unsigned int i);
   double y_for_B(unsigned int j);
@@ -56,8 +60,8 @@ protected:
   double* BdyOutBufferTopRight;
   double* BdyOutBufferBotLeft;
 
-  CollectiveRHSCollection* xUpdateRHSs;
-  CollectiveRHSCollection* yUpdateRHSs;
+  AbstractRHSCollection* xUpdateRHSs;
+  AbstractRHSCollection* yUpdateRHSs;
 
   void allocate_fields(SimulationInitializer* init);
 
@@ -78,7 +82,7 @@ protected:
   void dumpFields(std::string filename);
 };
 
-template<int m, int n>
+template<int m, int n, typename T>
 class TEmnInitializer : public SimulationInitializer {
 public:
   TEmnInitializer(double dx, double dy, double L_x, double L_y,
@@ -95,6 +99,12 @@ public:
     double y = this->y_for_B(j);
 
     return cos(m*M_PI*x/L_x)*cos(n*M_PI*y/L_y);
+  }
+  virtual AbstractRHSCollection* initCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						std::vector<AbstractCouplingInitializer*> c_inits,
+						unsigned int block_size,
+						mpi::communicator& comm) {
+    return new T(mat_inits, c_inits, block_size, comm);
   }
 };
 
