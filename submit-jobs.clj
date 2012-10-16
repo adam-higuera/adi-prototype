@@ -30,12 +30,12 @@
                          "/scr_verus/avh/Development/adi-prototype/qsemsquare2d-strong.q"))
 
 (let [args-hash
-      (cli *command-line-args*
-           ["-s" "--domain-sizes" "Run the code with these domain sizes" :parse-fn #(read %)]
-           ["-p" "--edge-procs" "Run the code with these many processors along the edges" :parse-fn #(read %)]
+      (first (cli *command-line-args*
+           ["-s" "--domain-sizes" "Run the code with these domain sizes" :parse-fn #(read-string %)]
+           ["-p" "--edge-procs" "Run the code with these many processors along the edges" :parse-fn #(read-string %)]
            ["-e" "--executable-name" "Use this executable"]
            ["-d" "--results-directory" "Write results to this folder"]
-           ["-q" "--queue" "Submit to this queue"])
+           ["-q" "--queue" "Submit to this queue"]))
       executable (if (contains? args-hash :executable-name) (:executable-name args-hash) "emsquare2d-strong")
       results-directory (if (contains? args-hash :results-directory)
                           (:results-directory args-hash)
@@ -43,4 +43,4 @@
       q (if (contains? args-hash :queue) (:queue args-hash) "lazy")]
   (doseq [domain-size (:domain-sizes args-hash)
           edge-procs (:edge-procs args-hash)]
-    (println (submit-job domain-size edge-procs executable results-directory))))
+    (println (submit-job domain-size edge-procs executable results-directory q))))
