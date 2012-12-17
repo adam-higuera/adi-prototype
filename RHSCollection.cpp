@@ -26,8 +26,7 @@ AbstractRHSCollection::AbstractRHSCollection(std::vector<AbstractMatrixInitializ
       rhsStorage[il+1] = rhsStorage[il] + blockSize;
     solvers[il] = new LocalSolver(mat_inits[il], blockSize);
     couplings[il] = new TDCoupling(coupling_inits[il], solvers[il], blockSize);
-    redRHSs[il] = theFactory.makeReducedRHS(il, couplings[il], blockSize);
-  }  
+  }
 }
 
 
@@ -42,6 +41,13 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
     recvbuf = new double[2*world.size()];
   }
   sendbuf = new double[2*block_size];
+  for(unsigned int il=0; il < blockSize; il++) {
+    std::cout << "WHAT " << redRHSs.size() << " " << world.rank() << " " << il << std::endl;
+    redRHSs[il] = (world.rank() == 0
+		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
+		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 0));
+    std::cout << "THE FUCK " << std::endl;
+  }
 }
 
 void CollectiveRHSCollection::doLines(double** theLines) {
@@ -82,8 +88,12 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
 						 mpi::communicator& world)
   :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
 	 sendbuf(new double[2*(block_size / world.size() + 1)]),
-	 recvbuf(new double[2*world.size()*numLocalSolves])
- {}
+	 recvbuf(new double[2*world.size()*numLocalSolves]) {
+  for(unsigned int il=0; il < blockSize; il++)
+    redRHSs[il] = (world.rank() == 0
+		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
+		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, il % world.size()));
+}
 
 void ChunkedRHSCollection::doLines(double** theLines) {
   for(unsigned int il=0; il < blockSize; il++) {
@@ -91,6 +101,9 @@ void ChunkedRHSCollection::doLines(double** theLines) {
     redRHSs[il]->getLocalPart()[0] = theLines[il][0];
     redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
   }
+
+  if(world.size() == 1)
+    return;
 
   this->doReducedSystems(redRHSs);
 

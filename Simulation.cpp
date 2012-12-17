@@ -18,16 +18,18 @@ BoundaryLocation determineBoundary(mpi::communicator& world) {
 Simulation::Simulation(
 		       double L_x, double L_y, double T,
 		       unsigned int n_cells, unsigned int n_steps,
+		       unsigned int procs_x, unsigned int procs_y,
+		       unsigned int block_size,
 		       SimulationInitializer* init, mpi::communicator & world
 		       )
 : world(world),
-  xLine(world.split(world.rank() / static_cast<unsigned int>(sqrt(world.size())))),
-  yLine(world.split(world.rank() % static_cast<unsigned int>(sqrt(world.size())))),
+  xLine(world.split(world.rank() / procs_x)),
+  yLine(world.split(world.rank() % procs_x)),
   nSteps(n_steps),
   dx(L_x/n_cells),
   dy(L_y/n_cells),
   dt(T/n_steps),
-  blockSize(n_cells / floor(sqrt(world.size()))),
+  blockSize(block_size),
   E_x(new double*[blockSize]),
   E_y(new double*[blockSize+1]),
   B_z(new double*[blockSize]),
@@ -44,13 +46,16 @@ Simulation::Simulation(
   VacuumCouplingInitializer coupling_init_x = VacuumCouplingInitializer(& mat_init_x, blockSize, xLine);
   VacuumCouplingInitializer coupling_init_y = VacuumCouplingInitializer(& mat_init_y, blockSize, yLine);
 
+
   std::vector<AbstractMatrixInitializer*> mat_inits_x(blockSize, & mat_init_x);
   std::vector<AbstractMatrixInitializer*> mat_inits_y(blockSize, & mat_init_y);
   std::vector<AbstractCouplingInitializer*> coupling_inits_x(blockSize, & coupling_init_x);
   std::vector<AbstractCouplingInitializer*> coupling_inits_y(blockSize, & coupling_init_y);
 
+
   xUpdateRHSs = init->initCollection(mat_inits_x, coupling_inits_x, blockSize, xLine);
   yUpdateRHSs = init->initCollection(mat_inits_y, coupling_inits_y, blockSize, yLine);
+
   this->allocate_fields(init);
 }
 
@@ -325,12 +330,14 @@ void Simulation::exchangeBdyValues(mpi::communicator comm, bdyDir dir) {
 }
 
 SimulationInitializer::SimulationInitializer(double dx, double dy, double L_x, double L_y,
+					     unsigned int x_procs, unsigned int y_procs,
 					     unsigned int blockSize, const mpi::communicator & comm)
 : dx(dx), dy(dy),
-  L_x(L_x), L_y(L_y) {
+  L_x(L_x), L_y(L_y),
+  x_procs(x_procs), y_procs(y_procs) {
   unsigned int procs_per_edge = floor(sqrt(comm.size()));
-  this->x_offset = blockSize*(comm.rank() % procs_per_edge)*dx;
-  this->y_offset = blockSize*(comm.rank() / procs_per_edge)*dy;
+  this->x_offset = blockSize*(comm.rank() % x_procs)*dx;
+  this->y_offset = blockSize*(comm.rank() / x_procs)*dy;
 }
 
 double SimulationInitializer::x_for_B(unsigned int i) {
