@@ -43,7 +43,9 @@ private:
   void compute_coupling_corrections();
   void gather_reduced_matrix();
 
-  void transpose_reduced_rhs_storage();
+  void rank_ord_to_line_ord(double* ro_buf, double** lo_buf);
+  void line_ord_to_rank_ord(double** lo_buf, double* ro_buf);
+  void apply_correction_to_several(double** rhs);
   
   double* coupling_correction_lower;
   double* coupling_correction_upper;

@@ -3,6 +3,8 @@ project(adi-prototype)
 
 set(Boost_ADDITIONAL_VERSIONS "1.50" "1.50.0")
 
+enable_language(Fortran)
+
 find_package(Boost COMPONENTS mpi program_options REQUIRED)
 find_package(MPI REQUIRED)
 find_package(LAPACK REQUIRED)

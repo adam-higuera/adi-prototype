@@ -1,15 +1,18 @@
 #!/bin/bash
 #
-#PBS -l walltime=4:0:0
+#PBS -l walltime=0:5:0
 #PBS -l nodes=3:ppn=3
 #PBS -q lazy
 #PBS -N emsquare2d50_9
 #PBS -o emsq2d25procs.out
 #PBS -e emsq2d25procs.err
 #PBS -V
-#
-# cd /scr_verus/avh/Development/adi-prototype
-# export LD_LIBRARY_PATH=/scr_verus/avh/Development/boost_1_50_0/stage/lib:$LD_LIBRARY_PATH
-cd $PBS_O_WORKDIR
 
-mpiexec ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))
+source /curc/tools/utils/dkinit
+
+use .boost-1.50_openmpi-1.6_intel-12.1.4_torque-2.5.11_ib
+use .hpctoolkit_5.2.1_openmpi-1.6_gcc-4.7.1_torque-2.5.11_ib
+
+cd /projects/adhi1756/adi-prototype
+
+mpiexec hpcrun -t ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))

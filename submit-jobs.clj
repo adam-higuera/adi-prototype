@@ -13,21 +13,20 @@
 ;     (str "-l nodes=" edge-procs ":ppn=" edge-procs)
 ;     (str "-l nodes=" (quot (expt edge-procs 2) 8) ":ppn=8+1:ppn=" (rem (expt edge-procs 2) 8))))
 
-(defn get-resource-list [edge-procs]
-  (if (== 0 (rem (expt edge-procs 2) 8))
-    (str "-l nodes=" (quot (expt edge-procs 2) 7) ":ppn=7+1:ppn=" (rem (expt edge-procs 2) 7))
-    (str "-l nodes=" (quot (expt edge-procs 2) 8) ":ppn=8+1:ppn=" (rem (expt edge-procs 2) 8))))
+(defn get-resource-list [edge-procs n-procs]
+  (if (== 0 (rem (expt edge-procs 2) n-procs))
+    (str "-l nodes=" (quot (expt edge-procs 2) (- n-procs 1)) ":ppn=" (- n-procs 1)"+1:ppn=" (rem (expt edge-procs 2) (- n-procs 1)))
+    (str "-l nodes=" (quot (expt edge-procs 2) n-procs) ":ppn=" n-procs "+1:ppn=" (rem (expt edge-procs 2) n-procs))))
 
-(defn submit-job [domain-size edge-procs executable results-directory q]
-  (println (get-resource-list edge-procs))
+(defn submit-job [domain-size edge-procs executable results-directory q procs-per-node]
   (clojure.java.shell/sh "qsub"
-                         (get-resource-list edge-procs)
+                         (get-resource-list edge-procs procs-per-node)
                          (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
                               ",PROG_NAME=" executable
                               ",RESULTS_DIR=" results-directory)
                          (str "-N" executable domain-size "_" edge-procs)
                          (str "-q" q)
-                         "/scr_verus/avh/Development/adi-prototype/qsemsquare2d-strong.q"))
+                         "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q"))
 
 (let [args-hash
       (first (cli *command-line-args*
@@ -35,12 +34,14 @@
            ["-p" "--edge-procs" "Run the code with these many processors along the edges" :parse-fn #(read-string %)]
            ["-e" "--executable-name" "Use this executable"]
            ["-d" "--results-directory" "Write results to this folder"]
-           ["-q" "--queue" "Submit to this queue"]))
+           ["-q" "--queue" "Submit to this queue"]
+           ["-n" "--procs-per-node" "Nubmer of processors per node on the cluster" :parse-fn #(read-string %)]))
       executable (if (contains? args-hash :executable-name) (:executable-name args-hash) "emsquare2d-strong")
       results-directory (if (contains? args-hash :results-directory)
                           (:results-directory args-hash)
                           ".")
-      q (if (contains? args-hash :queue) (:queue args-hash) "lazy")]
+      q (if (contains? args-hash :queue) (:queue args-hash) "lazy")
+      procs-per-node (if (contains? args-hash :procs-per-node) (:procs-per-node args-hash) 8)]
   (doseq [domain-size (:domain-sizes args-hash)
           edge-procs (:edge-procs args-hash)]
-    (println (submit-job domain-size edge-procs executable results-directory q))))
+    (println (submit-job domain-size edge-procs executable results-directory q procs-per-node))))

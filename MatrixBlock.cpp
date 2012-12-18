@@ -173,7 +173,7 @@ void MatrixBlock::solve(double* rhs) {
 // MPI fills buffers with all of the data from an individual processor contiguous in memory.
 // Thus, the right-hand sides of each equation are not contiguous in memory.  This function
 // copies the data from MPI into a new buffer where they are.
-void MatrixBlock::rank_ord_to_line_ord(double** ro_buf, double** lo_buf) {
+void MatrixBlock::rank_ord_to_line_ord(double* ro_buf, double** lo_buf) {
   for(unsigned int il=0; il < this->block_size; il++) {
     for(unsigned int ip=0; ip < world.size(); ip++) {
       if (ip != 0)
@@ -185,7 +185,7 @@ void MatrixBlock::rank_ord_to_line_ord(double** ro_buf, double** lo_buf) {
 }
 
 // The equations solved
-void MatrixBlock::line_ord_to_rank_ord(double** lo_buf, double** ro_buf) {
+void MatrixBlock::line_ord_to_rank_ord(double** lo_buf, double* ro_buf) {
   for(unsigned int il=0; il < this->block_size; il++) {
     for(unsigned int ip=0; ip < world.size(); ip++) {
       if(ip !=0)
@@ -196,7 +196,7 @@ void MatrixBlock::line_ord_to_rank_ord(double** lo_buf, double** ro_buf) {
   }
 }
 
-void MatrixBlock::apply_correction_to_several() {
+void MatrixBlock::apply_correction_to_several(double** rhs) {
   for(int il=0; il < this->block_size; il++) {
     for(int iv=0; iv < this->block_size; iv++) {
       if(world.rank() != world.size()-1) {
@@ -239,7 +239,7 @@ void MatrixBlock::solveSeveral(double** rhs) {
 			this->reduced_rhs[0],
 			& reduced_size, & info);
 	
-	this->line_ord_to_rank_ord(reduced_size, local_reduced_rhs);
+	this->line_ord_to_rank_ord(reduced_rhs, local_reduced_rhs);
 
 	mpi::scatter(world, local_reduced_rhs, reduced_rhs[0], 2*this->block_size, 0);
   } else {
@@ -253,7 +253,7 @@ void MatrixBlock::solveSeveral(double** rhs) {
 	mpi::gather(world, local_reduced_rhs, 2*this->block_size, 0);
 	mpi::scatter(world, local_reduced_rhs, 2*this->block_size, 0);
   }
-  this->apply_correction_to_several();
+  this->apply_correction_to_several(rhs);
 }
 
 void MatrixBlock::printDiag() {
