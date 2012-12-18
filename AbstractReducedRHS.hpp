@@ -15,6 +15,8 @@ public:
   virtual void solve() {}
   virtual double* getLocalPart() {return localPart;}
 
+  virtual void yhallothar() {std::cout << "Y HALLO THAR" << std::endl;}
+
 protected:
   unsigned int blockSize;
   double localPart[2];

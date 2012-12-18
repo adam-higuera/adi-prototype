@@ -26,25 +26,86 @@ AbstractRHSCollection::AbstractRHSCollection(std::vector<AbstractMatrixInitializ
       rhsStorage[il+1] = rhsStorage[il] + blockSize;
     solvers[il] = new LocalSolver(mat_inits[il], blockSize);
     couplings[il] = new TDCoupling(coupling_inits[il], solvers[il], blockSize);
-    redRHSs[il] = theFactory.makeReducedRHS(il, couplings[il], blockSize);
-  }  
+  }
 }
+
 
 CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
 						 std::vector<AbstractCouplingInitializer*> coupling_inits,
 						 unsigned int block_size,
 						 mpi::communicator& world)
-  :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
-	 sendbuf(new double[2*(block_size / world.size() + 1)]),
-	 recvbuf(new double[2*world.size()*numLocalSolves])
- {}
+  : AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
+    sendbuf(NULL),
+    recvbuf(NULL) {
+  if(world.size()==1)
+    return;
+  if(world.rank()==0) {
+    recvbuf = new double[2*block_size*world.size()];
+  }
+  sendbuf = new double[2*block_size];
+  for(unsigned int il=0; il < blockSize; il++) {
+    if(world.rank() == 0)
+      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
+    else
+      redRHSs[il] = new RemoteReducedRHS(couplings[il], world, blockSize, 0);
+  }
+}
 
 void CollectiveRHSCollection::doLines(double** theLines) {
+  for(unsigned int il=0; il < blockSize; il++) {
+    solvers[il]->solve(theLines[il]);
+    if(world.size()==1)
+      return;
+    redRHSs[il]->getLocalPart()[0] = theLines[il][0];
+    redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+  }
+
+  this->doReducedSystems(redRHSs);
+  for(unsigned int il=0; il < blockSize; il++) {
+    couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
+  }
+}
+
+void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
+  }
+  mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
+
+  for(unsigned int il=0; il < blockSize; il++) {
+    red_rhss[il]->copyValues(recvbuf, il, blockSize);
+    red_rhss[il]->solve();
+    red_rhss[il]->writeValues(recvbuf, il, blockSize);
+  }
+
+  mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
+  }
+}
+
+ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						 std::vector<AbstractCouplingInitializer*> coupling_inits,
+						 unsigned int block_size,
+						 mpi::communicator& world)
+  :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
+	 sendbuf(new double[2*(block_size / world.size() + 1)]),
+	 recvbuf(new double[2*world.size()*numLocalSolves]) {
+  for(unsigned int il=0; il < blockSize; il++)
+    redRHSs[il] = (world.rank() == 0
+		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
+		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, il % world.size()));
+}
+
+void ChunkedRHSCollection::doLines(double** theLines) {
   for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
     redRHSs[il]->getLocalPart()[0] = theLines[il][0];
     redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
   }
+
+  if(world.size() == 1)
+    return;
 
   this->doReducedSystems(redRHSs);
 
@@ -53,7 +114,7 @@ void CollectiveRHSCollection::doLines(double** theLines) {
   }
 }
 
-void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
+void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
   unsigned int n_l_thisp = blockSize / world.size() + (world.rank() < blockSize % world.size());
   for(unsigned int ip=0; ip < world.size(); ip++) {
     // Number of reduced solves assigned to ip
@@ -84,7 +145,7 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> 
   }
 }
 
-void CollectiveRHSCollection::dumpLine(unsigned int il, mpi::communicator& world) {
+void ChunkedRHSCollection::dumpLine(unsigned int il, mpi::communicator& world) {
   for(unsigned int ip=0; ip < world.size(); ip++) {
     if (world.rank() == ip)
       for(unsigned int i = 0; i < blockSize; i++)

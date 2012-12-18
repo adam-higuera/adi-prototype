@@ -19,8 +19,14 @@ int main(int argc, char* argv []) {
   unsigned int block_size = domain_size ? std::atoi(domain_size) : 50;
   if (world.rank() == 0)
     std::cout << "domain_size: " << block_size << std::endl;
-  unsigned int n_cells = block_size*static_cast<unsigned int>(sqrt(world.size()));
-  TEmnInitializer<1,1, CollectiveRHSCollection> init(.1/n_cells, .1/n_cells, .1, .1, n_cells/block_size, n_cells/block_size, block_size, world);
-  Simulation the_simulation(.1, .1, 5e-8, n_cells, n_cells/block_size, n_cells/block_size, 1000, & init, world);
+  unsigned int n_cells = block_size*world.size();
+  TEmnInitializer<1,1, CollectiveRHSCollection> init(.1/n_cells, .1/block_size, .1, .1, block_size, world.size(), 1, world);
+  /*
+		       double L_x, double L_y, double T,
+		       unsigned int n_cells, unsigned int n_steps,
+		       unsigned int procs_x, unsigned int procs_y,
+		       SimulationInitializer* init, mpi::communicator & world
+  */
+  Simulation the_simulation(.1, .1, 5e-8, n_cells, 1000, world.size(), 1, block_size, & init, world);
   the_simulation.simulate(true, 100, 10);
 }

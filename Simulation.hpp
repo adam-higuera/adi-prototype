@@ -6,7 +6,7 @@
 
 class SimulationInitializer {
 public:
-  SimulationInitializer(double dx, double dy, double L_x, double L_y,
+  SimulationInitializer(double dx, double dy, double L_x, double L_y, unsigned int x_procs, unsigned int y_procs,
 			unsigned int block_size, const mpi::communicator & comm);
   virtual double E_x(unsigned int i, unsigned int j) = 0;
   virtual double E_y(unsigned int i, unsigned int j) = 0;
@@ -21,6 +21,9 @@ protected:
   double x_for_E(unsigned int i);
   double y_for_E(unsigned int j);
   
+  unsigned int x_procs;
+  unsigned int y_procs;
+
   double dx;
   double dy;
   double x_offset;
@@ -32,7 +35,8 @@ protected:
 class Simulation {
 public:
   Simulation(double L_x, double L_y, double T,
-	     unsigned int n_cells, unsigned int n_steps,
+	     unsigned int n_cells, unsigned int x_procs, unsigned int y_procs, unsigned int n_steps,
+	     unsigned int block_size,
 	     SimulationInitializer* init, mpi::communicator & world);
 
   void simulate(bool dump=true, unsigned int dump_periodicity=9, unsigned int total_dumps=100);
@@ -86,8 +90,9 @@ template<int m, int n, typename T>
 class TEmnInitializer : public SimulationInitializer {
 public:
   TEmnInitializer(double dx, double dy, double L_x, double L_y,
+		  unsigned int x_procs, unsigned int y_procs,
 		  unsigned int block_size, const mpi::communicator & comm)
-    : SimulationInitializer(dx, dy, L_x, L_y, block_size, comm) {}
+    : SimulationInitializer(dx, dy, L_x, L_y, x_procs, y_procs, block_size, comm) {}
   virtual double E_x(unsigned int i, unsigned int j) {
     return 0;
   }

@@ -42,6 +42,20 @@ public:
 			  mpi::communicator& world);
 
   void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
+  void doLines(double** theLines);
+private:
+  double* sendbuf;
+  double* recvbuf;
+};
+
+class ChunkedRHSCollection : public AbstractRHSCollection {
+public:
+  ChunkedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+			  std::vector<AbstractCouplingInitializer*> coupling_inits,
+			  unsigned int block_size,
+			  mpi::communicator& world);
+
+  void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
   void dumpLine(unsigned int il, mpi::communicator& world);
   void doLines(double** theLines);
 private:
