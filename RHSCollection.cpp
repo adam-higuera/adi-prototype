@@ -37,28 +37,30 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
   : AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
     sendbuf(NULL),
     recvbuf(NULL) {
+  if(world.size()==1)
+    return;
   if(world.rank()==0) {
-    recvbuf = new double[2*world.size()];
+    recvbuf = new double[2*block_size*world.size()];
   }
   sendbuf = new double[2*block_size];
   for(unsigned int il=0; il < blockSize; il++) {
-    std::cout << "WHAT " << redRHSs.size() << " " << world.rank() << " " << il << std::endl;
-    redRHSs[il] = (world.rank() == 0
-		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
-		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 0));
-    std::cout << "THE FUCK " << std::endl;
+    if(world.rank() == 0)
+      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
+    else
+      redRHSs[il] = new RemoteReducedRHS(couplings[il], world, blockSize, 0);
   }
 }
 
 void CollectiveRHSCollection::doLines(double** theLines) {
   for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
+    if(world.size()==1)
+      return;
     redRHSs[il]->getLocalPart()[0] = theLines[il][0];
     redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
   }
 
   this->doReducedSystems(redRHSs);
-
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }

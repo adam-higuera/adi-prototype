@@ -11,7 +11,6 @@ LocalReducedRHS::LocalReducedRHS(TDCoupling* coupling, mpi::communicator& world,
   reducedLowerDiag(new double[2*(world.size()-1)-1]),
   reducedUpperDiag2(new double[2*(world.size()-1)-1]),
   reducedPivotPermutations(new int[2*(world.size()-1)-1]) {
-  std::cout << "NI " << std::endl;
   std::vector<mpi::request> requests(4*(world.size()-1));
   for(unsigned int ip=0; ip < world.size(); ip++) {
     unsigned int req_index = ip - (ip >= root);
@@ -37,7 +36,7 @@ LocalReducedRHS::LocalReducedRHS(TDCoupling* coupling, mpi::communicator& world,
       }
     }
   }
-  std::cout << "HAO " << world.rank() << std::endl;
+
   for(unsigned int i=0; i < (world.size()-1); i++) {
     this->reducedUpperDiag[2*i] = this->reducedLowerDiag[2*i] = 1;
   }
