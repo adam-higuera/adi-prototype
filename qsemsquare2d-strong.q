@@ -15,4 +15,4 @@ use .hpctoolkit_5.2.1_openmpi-1.6_gcc-4.7.1_torque-2.5.11_ib
 
 cd /projects/adhi1756/adi-prototype
 
-mpiexec hpcrun -t ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))
+mpiexec ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))

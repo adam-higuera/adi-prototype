@@ -152,9 +152,13 @@ void Simulation::dumpFields(std::string filename) {
 
 void Simulation::TimeStep() {
   this->implicitUpdateM();
+#ifndef NO_EXPLICIT_SOLVE
   this->explicitUpdateP();
+#endif
   this->implicitUpdateP();
+#ifndef NO_EXPLICIT_SOLVE
   this->explicitUpdateM();
+#endif
 }
 
 void Simulation::printField(std::string msg) {

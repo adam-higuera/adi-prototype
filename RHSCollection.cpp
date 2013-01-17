@@ -52,36 +52,51 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
 }
 
 void CollectiveRHSCollection::doLines(double** theLines) {
+
   for(unsigned int il=0; il < blockSize; il++) {
+#ifndef NO_LOCAL_SOLVES
     solvers[il]->solve(theLines[il]);
+#endif
     if(world.size()==1)
       return;
     redRHSs[il]->getLocalPart()[0] = theLines[il][0];
     redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
   }
 
+#ifndef LOCAL_ONLY
   this->doReducedSystems(redRHSs);
+#endif
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
 }
 
 void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
+#ifndef NO_COMMUNICATION
   for(int il=0; il < blockSize; il++) {
     std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
   }
+  std::cout << "Calling mpi::gather" << std::endl;
   mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
+#endif
 
+#ifndef COMMUNICATION_ONLY
   for(unsigned int il=0; il < blockSize; il++) {
     red_rhss[il]->copyValues(recvbuf, il, blockSize);
+#ifndef NO_REDUCED_SOLVE
     red_rhss[il]->solve();
+#endif
     red_rhss[il]->writeValues(recvbuf, il, blockSize);
   }
+#endif
 
+#ifndef NO_COMMUNICATION
+  std::cout << "Calling mpi::scatter" << std::endl;
   mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
   for(int il=0; il < blockSize; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
+#endif
 }
 
 ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,

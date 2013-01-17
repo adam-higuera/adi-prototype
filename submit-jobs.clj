@@ -26,7 +26,10 @@
                               ",RESULTS_DIR=" results-directory)
                          (str "-N" executable domain-size "_" edge-procs)
                          (str "-q" q)
+                         (str "-e" "err_size" domain-size "procs" edge-procs)
                          "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q"))
+
+; ./submit-jobs.clj -s [40] -p [10 20 30 40 50] -e emsquare2d-one-line -n 12 -q janus-short -d /lustre/adhi1756/comm_only
 
 (let [args-hash
       (first (cli *command-line-args*
@@ -35,7 +38,7 @@
            ["-e" "--executable-name" "Use this executable"]
            ["-d" "--results-directory" "Write results to this folder"]
            ["-q" "--queue" "Submit to this queue"]
-           ["-n" "--procs-per-node" "Nubmer of processors per node on the cluster" :parse-fn #(read-string %)]))
+           ["-n" "--procs-per-node" "Number of processors per node on the cluster" :parse-fn #(read-string %)]))
       executable (if (contains? args-hash :executable-name) (:executable-name args-hash) "emsquare2d-strong")
       results-directory (if (contains? args-hash :results-directory)
                           (:results-directory args-hash)
