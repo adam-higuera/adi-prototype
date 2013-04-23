@@ -20,7 +20,7 @@ int main(int argc, char* argv []) {
   if (world.rank() == 0)
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_cells = block_size*world.size();
-  TEmnInitializer<1,1, CollectiveRHSCollection> init(.1/n_cells, .1/block_size, .1, .1, world.size(), 1, block_size, world);
+  TEmnInitializer<1,1, ChunkedRHSCollection> init(.1/n_cells, .1/block_size, .1, .1, world.size(), 1, block_size, world);
   /*
 		       double L_x, double L_y, double T,
 		       unsigned int n_cells, unsigned int n_steps,

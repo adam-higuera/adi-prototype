@@ -53,46 +53,50 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
 
 void CollectiveRHSCollection::doLines(double** theLines) {
 
-  for(unsigned int il=0; il < blockSize; il++) {
 #ifndef NO_LOCAL_SOLVES
+  for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
-#endif
-    if(world.size()==1)
-      return;
-    redRHSs[il]->getLocalPart()[0] = theLines[il][0];
-    redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    if(world.size()!=1) {
+      redRHSs[il]->getLocalPart()[0] = theLines[il][0];
+      redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    }
   }
+#endif
+  if(world.size()==1)
+    return;
 
 #ifndef LOCAL_ONLY
   this->doReducedSystems(redRHSs);
 #endif
+#ifndef NO_APPLY_COUPLING
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
+#endif
 }
 
-void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
-#ifndef NO_COMMUNICATION
+void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
+#ifndef COMMUNICATION_ONLY
   for(int il=0; il < blockSize; il++) {
     std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
   }
-  std::cout << "Calling mpi::gather" << std::endl;
+#endif
+#ifndef NO_COLLECTIVES
   mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
 #endif
 
-#ifndef COMMUNICATION_ONLY
+#ifndef NO_REDUCED_SOLVE
   for(unsigned int il=0; il < blockSize; il++) {
     red_rhss[il]->copyValues(recvbuf, il, blockSize);
-#ifndef NO_REDUCED_SOLVE
     red_rhss[il]->solve();
-#endif
     red_rhss[il]->writeValues(recvbuf, il, blockSize);
   }
 #endif
 
-#ifndef NO_COMMUNICATION
-  std::cout << "Calling mpi::scatter" << std::endl;
+#ifndef NO_COLLECTIVES
   mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
+#endif
+#ifndef COMMUNICATION_ONLY
   for(int il=0; il < blockSize; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
@@ -106,57 +110,83 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
   :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
 	 sendbuf(new double[2*(block_size / world.size() + 1)]),
 	 recvbuf(new double[2*world.size()*numLocalSolves]) {
+  if(world.size()==1)
+    return;
   for(unsigned int il=0; il < blockSize; il++)
-    redRHSs[il] = (world.rank() == 0
+    redRHSs[il] = (world.rank() == il % world.size()
 		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
 		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, il % world.size()));
 }
 
 void ChunkedRHSCollection::doLines(double** theLines) {
+#ifndef NO_LOCAL_SOLVES
   for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
-    redRHSs[il]->getLocalPart()[0] = theLines[il][0];
-    redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    if(world.size() != 1) {
+      redRHSs[il]->getLocalPart()[0] = theLines[il][0];
+      redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    }
   }
+#endif
 
   if(world.size() == 1)
     return;
 
+#ifndef LOCAL_ONLY
   this->doReducedSystems(redRHSs);
+#endif
 
+#ifndef COMMUNICATION_ONLY
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
+#endif
 }
 
-void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss) {
+void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
   unsigned int n_l_thisp = blockSize / world.size() + (world.rank() < blockSize % world.size());
   for(unsigned int ip=0; ip < world.size(); ip++) {
     // Number of reduced solves assigned to ip
     unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
     // Get ready to send local part of reduced system assigned to processor ip
+    if(n_l_ip == 0)
+      break;
+
+#ifndef COMMUNICATION_ONLY
     for(unsigned int il=0; il < n_l_ip; il++ ) {
       sendbuf[2*il] = red_rhss[il*world.size() + ip]->getLocalPart()[0];
       sendbuf[2*il+1] = red_rhss[il*world.size() + ip]->getLocalPart()[1];
     }
+#endif    
 
+#ifndef NO_COLLECTIVES
     mpi::gather(world, sendbuf, 2*n_l_ip, recvbuf, ip);
+#endif
   }
 
+#ifndef NO_REDUCED_SOLVE
   for(unsigned int il=0; il < blockSize; il++) {
     red_rhss[il]->copyValues(recvbuf, il, n_l_thisp);
     red_rhss[il]->solve();
     red_rhss[il]->writeValues(recvbuf, il, n_l_thisp);
   }
+#endif
 
   for(unsigned int ip=0; ip < world.size(); ip++) {
     unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
-    mpi::scatter(world, recvbuf, sendbuf, 2*n_l_ip, ip);
+    if(n_l_ip == 0)
+      break;
 
+#ifndef NO_COLLECTIVES
+    mpi::scatter(world, recvbuf, sendbuf, 2*n_l_ip, ip);
+#endif
+
+#ifndef COMMUNICATION_ONLY
     for(unsigned int il=0; il*world.size() + ip < blockSize; il++) {
       red_rhss[il*world.size() + ip]->getLocalPart()[0] = sendbuf[2*il];
       red_rhss[il*world.size() + ip]->getLocalPart()[1] = sendbuf[2*il+1];
     }
+#endif
   }
 }
 

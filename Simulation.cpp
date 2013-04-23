@@ -20,6 +20,7 @@ Simulation::Simulation(
 		       unsigned int n_cells, unsigned int n_steps,
 		       unsigned int procs_x, unsigned int procs_y,
 		       unsigned int block_size,
+		       std::string& dump_dir,
 		       SimulationInitializer* init, mpi::communicator & world
 		       )
 : world(world),
@@ -39,7 +40,8 @@ Simulation::Simulation(
   BLeftBdy(new double[blockSize]),
   BRightBdy(new double[blockSize]),
   BdyOutBufferTopRight(new double[blockSize]),
-  BdyOutBufferBotLeft(new double[blockSize]) {
+  BdyOutBufferBotLeft(new double[blockSize]),
+  dumpDir(dump_dir) {
 
   VacuumMatrixInitializer mat_init_x = VacuumMatrixInitializer(dx, dt, blockSize, determineBoundary(xLine));
   VacuumMatrixInitializer mat_init_y = VacuumMatrixInitializer(dy, dt, blockSize, determineBoundary(yLine));
@@ -66,8 +68,8 @@ void Simulation::allocate_fields(SimulationInitializer* init) {
   // of the cells and the E-fields at the edges
   // Note that this means each processor shares a set of
   // E-fields with its neighbors.
-  E_x[0] = new double[blockSize*(blockSize+1)];
-  E_y[0] = new double[(blockSize+1)*blockSize];
+  E_x[0] = new double[(blockSize+1)*blockSize];
+  E_y[0] = new double[blockSize*(blockSize+1)];
   B_z[0] = new double[blockSize*blockSize];
   rhss[0] = new double[blockSize*blockSize];
 
@@ -94,7 +96,7 @@ void Simulation::allocate_fields(SimulationInitializer* init) {
   }  
 }
 
-void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps) {
+void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps, std::string dump_dir=std::string("")) {
   unsigned int n_dumps = 0;
   timeval t1, t2;
   gettimeofday(& t1, NULL);
@@ -103,14 +105,14 @@ void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int
   for(unsigned int i=0; i < nSteps; i++) {
     if (i % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
       std::ostringstream filename(std::ios::out);
-      filename << "dump" << i / dump_periodicity << ".txt";
+      filename << dumpDir << "dump" << i / dump_periodicity << ".txt";
       this->dumpFields(filename.str());
       n_dumps++;
     }
-    if (i % 100 == 0 && world.rank() == 0) {
+    if (i % 1000 == 0 && world.rank() == 0) {
       gettimeofday(& t2, NULL);
-      std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
-      // t.restart();
+      if(i > 0)
+	std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
       t1=t2;
     }
     this->TimeStep();
@@ -151,13 +153,21 @@ void Simulation::dumpFields(std::string filename) {
 }
 
 void Simulation::TimeStep() {
+#ifndef YEE
+#ifndef NO_IMPLICIT_SOLVE
   this->implicitUpdateM();
+#endif
 #ifndef NO_EXPLICIT_SOLVE
   this->explicitUpdateP();
 #endif
+#ifndef NO_EXPLICIT_SOLVE
   this->implicitUpdateP();
+#endif
 #ifndef NO_EXPLICIT_SOLVE
   this->explicitUpdateM();
+#endif
+#else
+  this->yeeUpdate();
 #endif
 }
 
@@ -198,14 +208,17 @@ void Simulation::printField(std::string msg) {
 }
 
 void Simulation::implicitUpdateM() {
+#ifndef COMMUNICATION_ONLY  
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
       rhss[iy][ix] = B_z[ix][iy] - LIGHTSPEED*dt/(2*dy) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
   }
+#endif
 
   xUpdateRHSs->doLines(rhss);
 
+#ifndef COMMUNICATION_ONLY
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
       B_z[ix][iy] = rhss[iy][ix];
@@ -213,26 +226,34 @@ void Simulation::implicitUpdateM() {
   }
 
   this->implicitMSubstituteB();
+#endif
 }
 
 void Simulation::implicitUpdateP() {
+#ifndef COMMUNICATION_ONLY
   for(unsigned int ix=0; ix < this->blockSize; ix++) {
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
       rhss[ix][iy] = B_z[ix][iy] + LIGHTSPEED*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
   }
+#endif
 
   yUpdateRHSs->doLines(rhss);
 
+#ifndef COMMUNICATION_ONLY
   std::copy(rhss[0],  rhss[0] + blockSize*blockSize, B_z[0]);
 
   this->implicitPSubstituteB();
+#endif
 }
 
 void Simulation::implicitPSubstituteB() {
   // Need B values from neighboring processors to complete E update
+#ifndef NO_NEAREST_NEIGHBOR
   this->exchangeBdyValues(yLine, BDY_Y);
+#endif
 
+#ifndef COMMUNICATION_ONLY
   for(unsigned int ix=0; ix < this->blockSize; ix++) {
     // Update E - Need B on boundaries to do correctly
     for(unsigned int iy=0; iy < this->blockSize + 1; iy++) {
@@ -241,11 +262,43 @@ void Simulation::implicitPSubstituteB() {
       E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
     }
   }
+#endif
+}
+
+void Simulation::yeeUpdate() {
+#ifndef YEE_NO_COMM
+  this->exchangeBdyValues(xLine, BDY_X);
+  this->exchangeBdyValues(yLine, BDY_Y);
+#endif
+  for(unsigned int ix=0; ix < this->blockSize; ix++) {    
+    for(unsigned int iy=0; iy < this->blockSize; iy++) {
+      B_z[ix][iy] += LIGHTSPEED*dt/(2*dy) * ((E_x[ix][iy+1] - E_x[ix][iy]) - (E_y[ix+1][iy] - E_y[ix][iy]));
+    }
+  }
+  for(unsigned int ix=0; ix < blockSize+1; ix++) {
+    for(unsigned int iy=0; iy < this->blockSize+1; iy++) {
+      double B_above = (iy != blockSize) ? B_z[0][iy] :
+	(ix != blockSize) ? BTopBdy[ix] : BTopBdy[ix-1];
+      double B_below = (iy != 0) ? B_z[0][iy-1] :
+	(ix != blockSize) ? BBotBdy[ix] : BBotBdy[ix-1];
+      double B_left = (ix != 0) ? B_z[0][ix-1] :
+	(iy != blockSize) ? BLeftBdy[iy] : BTopBdy[0];
+      double B_right = (ix != blockSize) ? B_z[0][ix] :
+	(iy != blockSize) ? BRightBdy[iy] : BTopBdy[blockSize-1];
+      if(iy < blockSize)
+	E_y[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (B_right - B_left);
+      if(ix < blockSize) 
+	E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
+    }
+  }
 }
 
 void Simulation::explicitUpdateP() {
+#ifndef NO_NEAREST_NEIGHBOR
   this->exchangeBdyValues(yLine, BDY_Y);
-  for(unsigned int ix=0; ix < this->blockSize; ix++) {
+#endif
+#ifndef COMMUNICATION_ONLY
+  for(unsigned int ix=0; ix < this->blockSize; ix++) {    
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
       rhss[0][iy] = B_z[ix][iy];
       B_z[ix][iy] += LIGHTSPEED*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
@@ -256,9 +309,13 @@ void Simulation::explicitUpdateP() {
       E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
     }
   }
+#endif
 }
 void Simulation::implicitMSubstituteB() {
+#ifndef NO_NEAREST_NEIGHBOR
   this->exchangeBdyValues(xLine, BDY_X);
+#endif
+#ifndef COMMUNICATION_ONLY
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     // Update E
     for(unsigned int ix=0; ix < this->blockSize+1; ix++) {
@@ -267,10 +324,14 @@ void Simulation::implicitMSubstituteB() {
       E_y[ix][iy] -= LIGHTSPEED*dt/(2*dy) * (B_right - B_left);
     }
   }
+#endif
 }
 
 void Simulation::explicitUpdateM() {
+#ifndef NO_NEAREST_NEIGHBOR
   this->exchangeBdyValues(xLine, BDY_X);
+#endif
+#ifndef COMMUNICATION_ONLY
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
       rhss[0][ix] = B_z[ix][iy];
@@ -282,6 +343,7 @@ void Simulation::explicitUpdateM() {
       E_y[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (B_right - B_left);
     }
   }
+#endif
 }
 
 //FIXME - use enum instead of bool

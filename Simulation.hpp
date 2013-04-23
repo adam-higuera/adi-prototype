@@ -37,6 +37,7 @@ public:
   Simulation(double L_x, double L_y, double T,
 	     unsigned int n_cells, unsigned int x_procs, unsigned int y_procs, unsigned int n_steps,
 	     unsigned int block_size,
+	     std::string dump_dir,
 	     SimulationInitializer* init, mpi::communicator & world);
 
   void simulate(bool dump=true, unsigned int dump_periodicity=9, unsigned int total_dumps=100);
@@ -61,11 +62,18 @@ protected:
   double* BBotBdy;
   double* BTopBdy;
 
+  double B_ul_corner;
+  double B_ur_corner;
+  double B_ll_corner;
+  double B_lr_corner;
+
   double* BdyOutBufferTopRight;
   double* BdyOutBufferBotLeft;
 
   AbstractRHSCollection* xUpdateRHSs;
   AbstractRHSCollection* yUpdateRHSs;
+
+  std::string dumpDir;
 
   void allocate_fields(SimulationInitializer* init);
 
@@ -79,6 +87,8 @@ protected:
 
   void implicitMSubstituteB();
   void implicitPSubstituteB();
+
+  void yeeUpdate();
 
   void TimeStep();
   void printField(std::string msg);

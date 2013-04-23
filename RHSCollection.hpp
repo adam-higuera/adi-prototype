@@ -41,7 +41,7 @@ public:
 			  unsigned int block_size,
 			  mpi::communicator& world);
 
-  void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
+  void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void doLines(double** theLines);
 private:
   double* sendbuf;
@@ -55,7 +55,7 @@ public:
 			  unsigned int block_size,
 			  mpi::communicator& world);
 
-  void doReducedSystems(std::vector<AbstractReducedRHS*> red_rhss);
+  void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void dumpLine(unsigned int il, mpi::communicator& world);
   void doLines(double** theLines);
 private:
