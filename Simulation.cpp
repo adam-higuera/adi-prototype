@@ -96,7 +96,7 @@ void Simulation::allocate_fields(SimulationInitializer* init) {
   }  
 }
 
-void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps, std::string dump_dir=std::string("")) {
+void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int total_dumps) {
   unsigned int n_dumps = 0;
   timeval t1, t2;
   gettimeofday(& t1, NULL);

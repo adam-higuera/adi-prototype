@@ -52,4 +52,17 @@ private:
   unsigned int blockSize;
 };
 
+class TestMatrixInitializer : public AbstractMatrixInitializer {
+public:
+  double operator ()(unsigned int i, WhichDiagonal w) {
+    switch(w) {
+    case MAIN_DIAG:
+      return 1.0;
+    case LOWER_DIAG:
+    case UPPER_DIAG:
+      return -1.0/3.0;
+    }
+  }
+};
+
 #endif

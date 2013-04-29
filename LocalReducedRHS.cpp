@@ -51,18 +51,18 @@ LocalReducedRHS::LocalReducedRHS(TDCoupling* coupling, mpi::communicator& world,
 void LocalReducedRHS::copyValues(double* buf, unsigned int il, unsigned int n_l_ip) {
   for(unsigned int ip=0; ip < world.size(); ip++) {
     if(ip != 0)
-      rhsStorage[2*ip-1] = buf[2*n_l_ip*ip + 2*(il / world.size())];
+      rhsStorage[2*ip-1] = buf[2*n_l_ip*ip + 2*il];
     if(ip != world.size() - 1)
-      rhsStorage[2*ip] = buf[2*n_l_ip*ip + 2*(il / world.size())+1];
+      rhsStorage[2*ip] = buf[2*n_l_ip*ip + 2*il+1];
   }
 }
 
 void LocalReducedRHS::writeValues(double* buf, unsigned int il, unsigned int n_l_ip) {
   for(unsigned int ip=0; ip < world.size(); ip++) {
     if(ip != 0)
-      buf[2*n_l_ip*ip + 2*(il/world.size())] = rhsStorage[2*ip-1];
+      buf[2*n_l_ip*ip + 2*il] = rhsStorage[2*ip-1];
     if(ip != world.size() - 1)
-      buf[2*n_l_ip*ip + 2*(il/world.size())+1] = rhsStorage[2*ip];
+      buf[2*n_l_ip*ip + 2*il+1] = rhsStorage[2*ip];
   }
 }
 

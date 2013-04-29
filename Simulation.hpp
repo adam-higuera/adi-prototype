@@ -37,7 +37,7 @@ public:
   Simulation(double L_x, double L_y, double T,
 	     unsigned int n_cells, unsigned int x_procs, unsigned int y_procs, unsigned int n_steps,
 	     unsigned int block_size,
-	     std::string dump_dir,
+	     std::string& dump_dir,
 	     SimulationInitializer* init, mpi::communicator & world);
 
   void simulate(bool dump=true, unsigned int dump_periodicity=9, unsigned int total_dumps=100);

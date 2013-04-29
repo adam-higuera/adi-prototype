@@ -18,7 +18,7 @@
     (str "-l nodes=" (quot (expt edge-procs 2) (- n-procs 1)) ":ppn=" (- n-procs 1)"+1:ppn=" (rem (expt edge-procs 2) (- n-procs 1)))
     (str "-l nodes=" (quot (expt edge-procs 2) n-procs) ":ppn=" n-procs "+1:ppn=" (rem (expt edge-procs 2) n-procs))))
 
-(defn submit-job [domain-size edge-procs executable results-directory q procs-per-node]
+(defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name]
   (clojure.java.shell/sh "qsub"
                          (get-resource-list edge-procs procs-per-node)
                          (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
@@ -27,7 +27,7 @@
                          (str "-N" executable domain-size "_" edge-procs)
                          (str "-q" q)
                          (str "-e" "err_size" domain-size "procs" edge-procs)
-                         "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q"))
+                         script-name))
 
 ; ./submit-jobs.clj -s [40] -p [10 20 30 40 50] -e emsquare2d-one-line -n 12 -q janus-short -d /lustre/adhi1756/comm_only
 
@@ -38,13 +38,15 @@
            ["-e" "--executable-name" "Use this executable"]
            ["-d" "--results-directory" "Write results to this folder"]
            ["-q" "--queue" "Submit to this queue"]
-           ["-n" "--procs-per-node" "Number of processors per node on the cluster" :parse-fn #(read-string %)]))
+           ["-n" "--procs-per-node" "Number of processors per node on the cluster" :parse-fn #(read-string %)]
+           ["-x" "--submission-script-name" "Name of the script to run"]))
       executable (if (contains? args-hash :executable-name) (:executable-name args-hash) "emsquare2d-strong")
       results-directory (if (contains? args-hash :results-directory)
                           (:results-directory args-hash)
                           ".")
       q (if (contains? args-hash :queue) (:queue args-hash) "lazy")
-      procs-per-node (if (contains? args-hash :procs-per-node) (:procs-per-node args-hash) 8)]
+      procs-per-node (if (contains? args-hash :procs-per-node) (:procs-per-node args-hash) 8)
+      script-name (if (contains? args-hash :submission-script-name) (:submission-script-name args-hash) "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q")]
   (doseq [domain-size (:domain-sizes args-hash)
           edge-procs (:edge-procs args-hash)]
-    (println (submit-job domain-size edge-procs executable results-directory q procs-per-node))))
+    (println (submit-job domain-size edge-procs executable results-directory q procs-per-node script-name))))
