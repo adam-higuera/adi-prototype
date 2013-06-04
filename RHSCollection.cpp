@@ -434,6 +434,8 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
   unsigned int p = world.rank();
   unsigned int n_delegated = blockSize/3;
   unsigned int delegation_size = 2*n_p*n_delegated;
+  unsigned int left_over = blockSize % 3;
+  unsigned int left_over_size = 2*n_p*left_over;
   int reduced_size = 2*(n_p-1);
 
   if(p == 0) {
@@ -443,13 +445,13 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
     }
     std::cout << std::endl;
     this->transpose(recvbuf, n_p, blockSize);
-    world.send(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
-    world.send(2, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
+    world.send(1, 0, recvbuf + delegation_size + left_over_size, delegation_size);
+    world.send(2, 0, recvbuf + 2*delegation_size + left_over_size, delegation_size);
     for(unsigned int il = 0; il < 2*n_p*blockSize; il++) {
       std::cout << recvbuf[il] << " ";
     }
     std::cout << std::endl;
-    for(unsigned int il = 0; il < n_delegated + blockSize % 3; il++) {
+    for(unsigned int il = 0; il < n_delegated + left_over; il++) {
       LocalReducedRHS* theSolve = (LocalReducedRHS*)red_rhss[il];
       dgttrs_("T", & reduced_size, & one,
 	      theSolve->reducedLowerDiag, theSolve->reducedDiag, theSolve->reducedUpperDiag,
@@ -457,8 +459,8 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
 	      recvbuf + 2*n_p*il + 1,
 	      & reduced_size, & info);
     }
-    world.recv(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
-    world.recv(2, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
+    world.recv(1, 0, recvbuf + delegation_size + left_over_size, delegation_size);
+    world.recv(2, 0, recvbuf + 2*delegation_size + left_over_size, delegation_size);
     this->transpose(recvbuf, blockSize, n_p);
   } else if (p == 1 || p == 2) {
     int info; int one = 1;

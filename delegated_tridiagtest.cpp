@@ -10,21 +10,21 @@ int main (int argc, char* argv []) {
   mpi::communicator world;
 
   TestMatrixInitializer init;
-  std::vector<AbstractMatrixInitializer*> mat_inits(9, & init);
-  VacuumCouplingInitializer c_init(& init, 9, world);
-  std::vector<AbstractCouplingInitializer*> c_inits(9, & c_init);
+  std::vector<AbstractMatrixInitializer*> mat_inits(10, & init);
+  VacuumCouplingInitializer c_init(& init, 10, world);
+  std::vector<AbstractCouplingInitializer*> c_inits(10, & c_init);
 
-  DelegatedRHSCollection crc(mat_inits, c_inits, 9, world);
+  DelegatedRHSCollection crc(mat_inits, c_inits, 10, world);
 
-  double test_rhs_storage[81];
-  double* test_rhs[9];
+  double test_rhs_storage[100];
+  double* test_rhs[10];
 
-  std::fill_n(test_rhs_storage, 81, 0);
+  std::fill_n(test_rhs_storage, 100, 0);
 
-  for(int i = 0; i < 9; i++) {
-    test_rhs_storage[i*9 + 0] = 1;
+  for(int i = 0; i < 10; i++) {
+    test_rhs_storage[i*10 + 0] = 1;
     // test_rhs_storage[i*9 + 8] = 1;
-    test_rhs[i] = & test_rhs_storage[i*9];
+    test_rhs[i] = & test_rhs_storage[i*10];
   }
 
   world.barrier();
@@ -33,11 +33,11 @@ int main (int argc, char* argv []) {
   int dummy;
   std::ios::openmode om = (world.rank() == 0) ? std::ios::out : std::ios::app;
 
-  for(unsigned int il=0; il < 9; il++) {
+  for(unsigned int il=0; il < 10; il++) {
     std::ofstream dump("tdtest.txt", om);
     if (world.rank() != 0)
       world.recv(world.rank()-1, 0, dummy);
-    for(int i=0; i < 9; i++) {
+    for(int i=0; i < 10; i++) {
       dump << test_rhs[il][i] << " ";
     }
     dump.flush();
@@ -56,25 +56,25 @@ int main (int argc, char* argv []) {
   if(world.rank() == 4) {
     std::ofstream dump("tdtest.txt", std::ios::app);
 
-    double herp[45];
-    double d[45];
-    double ld[44];
-    double ud[44];
+    double herp[50];
+    double d[50];
+    double ld[49];
+    double ud[49];
 
-    std::fill_n(herp, 45, 0);
-    std::fill_n(d, 45, 1);
-    std::fill_n(ld, 44, -1.0/3.0);
-    std::fill_n(ud, 44, -1.0/3.0);
+    std::fill_n(herp, 50, 0);
+    std::fill_n(d, 50, 1);
+    std::fill_n(ld, 49, -1.0/3.0);
+    std::fill_n(ud, 49, -1.0/3.0);
 
-    for(unsigned int i=0; i < 45; i += 9) {herp[i] = 1; // herp[i+8] = 1;
+    for(unsigned int i=0; i < 50; i += 10) {herp[i] = 1; // herp[i+8] = 1;
     }
 
     dump << "serial solve: " << std::endl;
 
-    int ninety=45; int one=1; int info;
+    int ninety=50; int one=1; int info;
     dgtsv_(& ninety, & one, ud, d, ld, herp, & ninety, & info);
 
-    for(int i = 0; i < 45; i++)
+    for(int i = 0; i < 50; i++)
       dump << herp[i] << " ";
     dump << std::endl;
   }
