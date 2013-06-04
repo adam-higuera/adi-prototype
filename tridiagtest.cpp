@@ -1,5 +1,6 @@
 #include "RHSCollection.hpp"
 #include <fstream>
+#include <iomanip>
 
 extern "C" {
   int dgtsv_(int*, int*, double*, double*, double*, double*, int*, int*);
@@ -46,21 +47,51 @@ int main (int argc, char* argv []) {
   world.barrier();
   crc.doLines(test_rhs);
 
-  for(int il=0; il < 1; il++) {
-    if (world.rank() != 0)
-      world.recv(world.rank()-1, 0, dummy);
-    for(int i=0; i < 9; i++) {
-      dump << test_rhs[il][i] << " ";
+  for(unsigned int il = 0; il < 9; il++) {
+    if(world.rank() != 0)
+      world.recv(world.rank() - 1, 0, dummy);
+    else if (il != 0)
+      world.recv(world.size() - 1, 0, dummy);
+
+    std::ios_base::openmode om = (world.rank() == 0 && il == 0) ? std::ios::out : std::ios::app;
+
+    std::ofstream dump("tdtest.txt", om);
+    for(unsigned int ix = 0; ix < 9; ix++) {
+      dump << test_rhs[il][ix];
+      if (ix != 9-1 || world.rank() != world.size() - 1)
+	dump << ", ";
     }
+    if(world.rank() == world.size() - 1)
+      dump << "\n";
     dump.flush();
-    if (world.rank()+1 < world.size()) {
+    if(world.rank() != world.size() - 1)
       world.send(world.rank()+1, 0, dummy);
+    else if (il != 9 - 1)
+      world.send(0, 0, dummy);
+  }
+  if(world.rank() == 4) {
+    std::ofstream dump("tdtest.txt", std::ios::app);
+
+    double herp[45];
+    double d[45];
+    double ld[44];
+    double ud[44];
+
+    std::fill_n(herp, 45, 0);
+    std::fill_n(d, 45, 1);
+    std::fill_n(ld, 44, -1.0/3.0);
+    std::fill_n(ud, 44, -1.0/3.0);
+
+    for(unsigned int i=0; i < 45; i += 9) {herp[i] = 1; // herp[i+8] = 1;
     }
-    // if(world.rank() == 4) {
-    //   for(int i=0; i < 9; i++) {
-    //   	std::cout << test_rhs[il][i] << " ";
-    //   }
-    //   std::cout << std::endl << std::endl;
-    // }
+
+    dump << "serial solve: " << std::endl;
+
+    int ninety=45; int one=1; int info;
+    dgtsv_(& ninety, & one, ud, d, ld, herp, & ninety, & info);
+
+    for(int i = 0; i < 45; i++)
+      dump << herp[i] << " ";
+    dump << std::endl;
   }
 }

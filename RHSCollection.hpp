@@ -57,7 +57,9 @@ public:
 
   void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void doLines(double** theLines);
+
 private:
+  void transpose(double* mat, unsigned int rows, unsigned int cols);
   double* sendbuf;
   double* recvbuf;
 };

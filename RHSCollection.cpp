@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <bitset>
 #include "RHSCollection.hpp"
 
 AbstractReducedRHS* ReducedRHSFactory::makeReducedRHS(unsigned int il, TDCoupling* coupling,
@@ -365,10 +364,10 @@ void NonBlockingRHSCollection::doLines(double** theLines) {
   for(unsigned int il=0; il < blockSize; il++) corrections_done[il] = false;
 }
 
-void DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
-						    std::vector<AbstractCouplingInitializer*> coupling_inits,
-						    unsigned int block_size,
-						    mpi::communicator& world)
+DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+					       std::vector<AbstractCouplingInitializer*> coupling_inits,
+					       unsigned int block_size,
+					       mpi::communicator& world)
   : AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
     sendbuf(NULL),
     recvbuf(NULL) {
@@ -379,23 +378,30 @@ void DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixIn
   if(p==0) {
     recvbuf = new double[2*block_size*world.size()];
   } else if (p == 1 || p == 2) {
-    recvbuf = new double[2*block_szie*world.size()/3];
+    recvbuf = new double[2*block_size*world.size()/3];
   }
   sendbuf = new double[2*block_size];
 
+  unsigned int n_p = world.size();
   unsigned int n_delegated = blockSize/3;
   unsigned int delegation_size = 2*n_p*n_delegated;
   unsigned int reduced_size = 2*(n_p-1);
 
   for(unsigned int il=0; il < blockSize; il++) {
-    if(p == 0 && il < n_delegated + blockSize % 3)
-      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
-    else if (p == 1 && il < 2*n_delegated + blockSize % 3)
-      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
-    else if (p == 2 && il < 3*n_delegated + blockSize % 3)
-      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
-    else
-      redRHSs[il] = new RemoteReducedRHS(couplings[il], world, blockSize, 0);
+    // std::cout << "HERP" << il << "_" << p << std::endl;
+    if(il < n_delegated + blockSize % 3)
+      redRHSs[il] = (p == 0)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 0);
+    else if (il < 2*n_delegated + blockSize % 3)
+      redRHSs[il] = (p == 1)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 1)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 1);
+    else if (il < 3*n_delegated + blockSize % 3)
+      redRHSs[il] = (p == 2)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 2)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 2);
+    // std::cout << "DERP" << il << "_" << p << std::endl;
   }
 }
 
@@ -428,32 +434,43 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
   unsigned int p = world.rank();
   unsigned int n_delegated = blockSize/3;
   unsigned int delegation_size = 2*n_p*n_delegated;
-  unsigned int reduced_size = 2*(n_p-1);
+  int reduced_size = 2*(n_p-1);
 
   if(p == 0) {
+    int info; int one = 1;
+    for(unsigned int il = 0; il < 2*n_p*blockSize; il++) {
+      std::cout << recvbuf[il] << " ";
+    }
+    std::cout << std::endl;
     this->transpose(recvbuf, n_p, blockSize);
     world.send(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
     world.send(2, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
-    for(unsigned int il = 0; il < n_delegated + blockSize % 3; il++) {      
-      dgttrs_("T", & reducedSize, & one,
-	      red_rhss[il]->reducedLowerDiag, red_rhss[il]->reducedDiag, red_rhss[il]->reducedUpperDiag,
-	      red_rhss[il]->reducedUpperDiag2, red_rhss[il]->reducedPivotPermutations,
-	      recvbuf + 2*n_p*il + 1,
-	      & reducedSize, & info);
+    for(unsigned int il = 0; il < 2*n_p*blockSize; il++) {
+      std::cout << recvbuf[il] << " ";
     }
-    word.recv(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
-    word.recv(1, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
+    std::cout << std::endl;
+    for(unsigned int il = 0; il < n_delegated + blockSize % 3; il++) {
+      LocalReducedRHS* theSolve = (LocalReducedRHS*)red_rhss[il];
+      dgttrs_("T", & reduced_size, & one,
+	      theSolve->reducedLowerDiag, theSolve->reducedDiag, theSolve->reducedUpperDiag,
+	      theSolve->reducedUpperDiag2, theSolve->reducedPivotPermutations,
+	      recvbuf + 2*n_p*il + 1,
+	      & reduced_size, & info);
+    }
+    world.recv(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
+    world.recv(2, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
     this->transpose(recvbuf, blockSize, n_p);
   } else if (p == 1 || p == 2) {
-    unsigned int info; unsigned int one = 1;
+    int info; int one = 1;
     world.recv(0, 0, recvbuf, delegation_size);
     for(unsigned int il = 0; il < n_delegated; il++) {
       unsigned int my_i = p*n_delegated + blockSize % 3 + il;
-      dgttrs_("T", & reducedSize, & one,
-	      red_rhss[my_i]->reducedLowerDiag, red_rhss[my_i]->reducedDiag, red_rhss[my_i]->reducedUpperDiag,
-	      red_rhss[my_i]->reducedUpperDiag2, red_rhss[my_i]->reducedPivotPermutations,
+      LocalReducedRHS* theSolve = (LocalReducedRHS*)red_rhss[my_i];
+      dgttrs_("T", & reduced_size, & one,
+	      theSolve->reducedLowerDiag, theSolve->reducedDiag, theSolve->reducedUpperDiag,
+	      theSolve->reducedUpperDiag2, theSolve->reducedPivotPermutations,
 	      recvbuf + 2*n_p*il + 1,
-	      & reducedSize, & info);
+	      & reduced_size, & info);
     }
     world.send(0, 0, recvbuf, delegation_size);
   }
@@ -465,27 +482,29 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
   }
 }
 
-void DelegatedRHSCollection::transpose(double *A, int r, int c)
+void DelegatedRHSCollection::transpose(double *A, unsigned int r, unsigned int c)
 {
+  std::cout << "Entering transpose" << std::endl;
   int size = r*c - 1;
   int t; // holds element to be replaced, eventually becomes next element to move
   int next; // location of 't' to be moved
   int cycleBegin; // holds start of cycle
   int i; // iterator
-  bitset b; // hash to mark moved elements
+  std::vector<bool> b(size+1, 0); // hash to mark moved elements
  
-  b.reset();
   b[0] = b[size] = 1;
   i = 1; // Note that A[0] and A[size-1] won't move
   while (i < size) {
     cycleBegin = i;
+    double t1 = A[2*i];
+    double t2 = A[2*i + 1];
     do {
       // Input matrix [r x c]
       // Output matrix 1
       // i_new = (i*r)%(N-1)
-      next = 2*((i*r)%size);
-      std::swap(A[next], A[i]);
-      std::swap(A[next+1], A[i+1])
+      next = (i*r)%size;
+      std::swap(A[2*next], t1);
+      std::swap(A[2*next+1], t2);
       b[i] = 1;
       i = next;
     } while (i != cycleBegin);
@@ -493,4 +512,5 @@ void DelegatedRHSCollection::transpose(double *A, int r, int c)
     // Get Next Move (what about querying random location?)
     for (i = 1; i < size && b[i]; i++) {}
   }
+  std::cout << "Exiting transpose" << std::endl;
 }
