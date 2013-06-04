@@ -154,5 +154,11 @@ square-reduced-only-dump: square_dump.cpp ${HEADERS} ${SRC_FILES}
 square-full-dump: square_dump.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} square_dump.cpp ${SRC_FILES} ${LIBS}
 
+square-delegated-full: accuracy_check_delegated.cpp ${HEADERS} ${SRC_FILES}
+	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check_delegated.cpp ${SRC_FILES} ${LIBS}
+
+accuracy-check-delegated: accuracy_check_delegated.cpp ${HEADERS} ${SRC_FILES}
+	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check_delegated.cpp ${SRC_FILES} ${LIBS}
+
 accuracy-check: accuracy_check.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check.cpp ${SRC_FILES} ${LIBS}
