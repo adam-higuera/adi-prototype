@@ -15,8 +15,10 @@ int main(int argc, char* argv []) {
   // std::cout << startstrm2.str() << std::endl;
 
   char *domain_size = std::getenv("DOMAIN_SIZE");
+  char *dump_dir = std::getenv("RESULTS_DIR");
 
   unsigned int block_size = domain_size ? std::atoi(domain_size) : 50;
+  std::string dump_directory = dump_dir ? std::string(dump_dir) : std::string("");
   if (world.rank() == 0)
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_cells = block_size*world.size();
@@ -27,6 +29,8 @@ int main(int argc, char* argv []) {
 		       unsigned int procs_x, unsigned int procs_y,
 		       SimulationInitializer* init, mpi::communicator & world
   */
-  Simulation the_simulation(.1, .1, 5e-8, n_cells, 10000, world.size(), 1, block_size, & init, world);
+  double simulation_time = 10*sqrt(2)*(.1)/LIGHTSPEED;
+  Simulation the_simulation(.1, .1, 5e-8, n_cells, 10000,
+			    world.size(), 1, block_size, dump_directory, & init, world);
   the_simulation.simulate(false, 100, 10);
 }

@@ -21,6 +21,6 @@ int main(int argc, char* argv []) {
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_cells = block_size*static_cast<unsigned int>(sqrt(world.size()));
   TEmnInitializer<1,1, NonBlockingRHSCollection> init(.1/n_cells, .1/n_cells, .1, .1, block_size, world);
-  Simulation the_simulation(.1, .1, 5e-8, n_cells, 1000, & init, world);
+  Simulation the_simulation(.1, .1, 5e-8, n_cells, 1000, n_cells/block_size, n_cells/block_size, & init, world);
   the_simulation.simulate(true, 100, 10);
 }

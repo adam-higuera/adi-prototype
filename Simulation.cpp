@@ -13,6 +13,7 @@ BoundaryLocation determineBoundary(mpi::communicator& world) {
     return LOWER_BDY;
   else if(world.rank() == world.size() - 1)
     return UPPER_BDY;
+  return NO_BDY;
 }
 
 Simulation::Simulation(
@@ -101,11 +102,11 @@ void Simulation::simulate(bool dump, unsigned int dump_periodicity, unsigned int
   timeval t1, t2;
   gettimeofday(& t1, NULL);
 
-  std::cout << std::setprecision(6);
-  for(unsigned int i=0; i < nSteps; i++) {
+  std::cout << std::setprecision(10);
+  for(unsigned int i=0; i <= nSteps; i++) {
     if (i % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
       std::ostringstream filename(std::ios::out);
-      filename << dumpDir << "dump" << i / dump_periodicity << ".txt";
+      filename << dumpDir << "/dump" << i / dump_periodicity << "dt" << 10.0/nSteps << "dx" << dx << ".txt";
       this->dumpFields(filename.str());
       n_dumps++;
     }
@@ -135,6 +136,8 @@ void Simulation::dumpFields(std::string filename) {
     std::ios_base::openmode om = (world.rank() == 0 && iy == 0) ? std::ios::out : std::ios::app;
 
     std::ofstream dump(filename.c_str(), om);
+    dump << std::setprecision(20);
+    
     for(unsigned int ix = 0; ix < blockSize; ix++) {
       dump << B_z[ix][iy];
       if (ix != blockSize-1 || xLine.rank() != xLine.size() - 1)
@@ -160,7 +163,7 @@ void Simulation::TimeStep() {
 #ifndef NO_EXPLICIT_SOLVE
   this->explicitUpdateP();
 #endif
-#ifndef NO_EXPLICIT_SOLVE
+#ifndef NO_IMPLICIT_SOLVE
   this->implicitUpdateP();
 #endif
 #ifndef NO_EXPLICIT_SOLVE
@@ -208,6 +211,7 @@ void Simulation::printField(std::string msg) {
 }
 
 void Simulation::implicitUpdateM() {
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY  
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
@@ -215,21 +219,25 @@ void Simulation::implicitUpdateM() {
     }
   }
 #endif
+#endif
 
   xUpdateRHSs->doLines(rhss);
 
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
       B_z[ix][iy] = rhss[iy][ix];
     }
   }
+#endif  
 
   this->implicitMSubstituteB();
 #endif
 }
 
 void Simulation::implicitUpdateP() {
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
   for(unsigned int ix=0; ix < this->blockSize; ix++) {
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
@@ -237,11 +245,14 @@ void Simulation::implicitUpdateP() {
     }
   }
 #endif
+#endif
 
   yUpdateRHSs->doLines(rhss);
 
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
   std::copy(rhss[0],  rhss[0] + blockSize*blockSize, B_z[0]);
+#endif
 
   this->implicitPSubstituteB();
 #endif
@@ -300,12 +311,15 @@ void Simulation::explicitUpdateP() {
 #ifndef COMMUNICATION_ONLY
   for(unsigned int ix=0; ix < this->blockSize; ix++) {    
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
-      rhss[0][iy] = B_z[ix][iy];
+      // rhss[0][iy] = B_z[ix][iy];
+      rhss[ix][iy] = B_z[ix][iy];
       B_z[ix][iy] += LIGHTSPEED*dt/(2*dy) * (E_x[ix][iy+1] - E_x[ix][iy]);
     }
     for(unsigned int iy=0; iy < this->blockSize+1; iy++) {
-      double B_above = (iy != blockSize) ? rhss[0][iy] : BTopBdy[ix];
-      double B_below = (iy != 0) ? rhss[0][iy-1] : BBotBdy[ix];
+      // double B_above = (iy != blockSize) ? rhss[0][iy] : BTopBdy[ix];
+      // double B_below = (iy != 0) ? rhss[0][iy-1] : BBotBdy[ix];
+      double B_above = (iy != blockSize) ? rhss[ix][iy] : BTopBdy[ix];
+      double B_below = (iy != 0) ? rhss[ix][iy-1] : BBotBdy[ix];
       E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
     }
   }
@@ -334,12 +348,15 @@ void Simulation::explicitUpdateM() {
 #ifndef COMMUNICATION_ONLY
   for(unsigned int iy=0; iy < this->blockSize; iy++) {
     for(unsigned int ix=0; ix < this->blockSize; ix++) {
-      rhss[0][ix] = B_z[ix][iy];
+      // rhss[0][ix] = B_z[ix][iy];
+      rhss[iy][ix] = B_z[ix][iy];
       B_z[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (E_y[ix+1][iy] - E_y[ix][iy]);
     }
     for(unsigned int ix=0; ix < this->blockSize+1; ix++) {
-      double B_left = (ix != 0) ? rhss[0][ix-1] : BLeftBdy[iy];
-      double B_right = (ix != blockSize) ? rhss[0][ix] : BRightBdy[iy];
+      // double B_left = (ix != 0) ? rhss[0][ix-1] : BLeftBdy[iy];
+      // double B_right = (ix != blockSize) ? rhss[0][ix] : BRightBdy[iy];
+      double B_left = (ix != 0) ? rhss[iy][ix-1] : BLeftBdy[iy];
+      double B_right = (ix != blockSize) ? rhss[iy][ix] : BRightBdy[iy];
       E_y[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (B_right - B_left);
     }
   }

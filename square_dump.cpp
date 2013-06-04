@@ -27,5 +27,5 @@ int main(int argc, char* argv []) {
   TEmnInitializer<1,1, CollectiveRHSCollection>
     init(.1/n_cells, .1/n_cells, .1, .1, n_procs, n_procs, block_size, world);
   Simulation the_simulation(.1, .1, 5e-8, n_cells, 10000, n_procs, n_procs, block_size, dump_directory, & init, world);
-  the_simulation.simulate(true, 1, 10);
+  the_simulation.simulate(true, 100, 10);
 }

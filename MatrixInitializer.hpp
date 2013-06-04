@@ -22,6 +22,7 @@ public:
 	case UPPER_DIAG:
 	  return this->offDiag;
 	}
+	return -1.0;
   }
 protected:
   double diag, offDiag;
@@ -40,6 +41,7 @@ public:
       return this->diag + this->offDiag;
     else
       return ToeplitzMatrixInitializer::operator()(i, w);
+    return -1.0;
   }
 
 private:
@@ -62,6 +64,7 @@ public:
     case UPPER_DIAG:
       return -1.0/3.0;
     }
+    return -1.0;
   }
 };
 

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <bitset>
 #include "RHSCollection.hpp"
 
 AbstractReducedRHS* ReducedRHSFactory::makeReducedRHS(unsigned int il, TDCoupling* coupling,
@@ -13,7 +15,6 @@ AbstractRHSCollection::AbstractRHSCollection(std::vector<AbstractMatrixInitializ
 					     unsigned int block_size, mpi::communicator& world)
   :  world(world),
      blockSize(block_size),
-     numLocalSolves(block_size / world.size() + (world.rank() < block_size % world.size())),
      couplings(block_size, NULL),
      solvers(block_size, NULL),
      redRHSs(block_size, NULL),
@@ -52,7 +53,7 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
 }
 
 void CollectiveRHSCollection::doLines(double** theLines) {
-
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef NO_LOCAL_SOLVES
   for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
@@ -62,16 +63,19 @@ void CollectiveRHSCollection::doLines(double** theLines) {
     }
   }
 #endif
+#endif
   if(world.size()==1)
     return;
 
-#ifndef LOCAL_ONLY
+#ifndef NO_TOTAL_REDUCED
   this->doReducedSystems(redRHSs);
 #endif
-#ifndef NO_APPLY_COUPLING
+#ifndef TOTAL_REDUCED_ONLY
+#ifndef COMMUNICATION_ONLY
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
+#endif
 #endif
 }
 
@@ -82,6 +86,9 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>&
   }
 #endif
 #ifndef NO_COLLECTIVES
+#ifdef USE_BARRIERS
+  world.barrier();
+#endif
   mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
 #endif
 
@@ -94,6 +101,9 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>&
 #endif
 
 #ifndef NO_COLLECTIVES
+#ifdef USE_BARRIERS
+  world.barrier();
+#endif
   mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
 #endif
 #ifndef COMMUNICATION_ONLY
@@ -108,17 +118,21 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
 						 unsigned int block_size,
 						 mpi::communicator& world)
   :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
-	 sendbuf(new double[2*(block_size / world.size() + 1)]),
-	 recvbuf(new double[2*world.size()*numLocalSolves]) {
+     sendbuf(new double[2*(block_size / world.size() + 1)]) {
   if(world.size()==1)
     return;
+  numLocalSolves = block_size / world.size() + (world.rank() < block_size % world.size());
+  recvbuf = new double[2*world.size()*numLocalSolves];
   for(unsigned int il=0; il < blockSize; il++)
     redRHSs[il] = (world.rank() == il % world.size()
-		   ? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
-		   : (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, il % world.size()));
+		   ? (AbstractReducedRHS*)
+		   new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
+		   : (AbstractReducedRHS*)
+		   new RemoteReducedRHS(couplings[il], world, blockSize, il % world.size()));
 }
 
 void ChunkedRHSCollection::doLines(double** theLines) {
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef NO_LOCAL_SOLVES
   for(unsigned int il=0; il < blockSize; il++) {
     solvers[il]->solve(theLines[il]);
@@ -128,23 +142,25 @@ void ChunkedRHSCollection::doLines(double** theLines) {
     }
   }
 #endif
+#endif
 
   if(world.size() == 1)
     return;
 
-#ifndef LOCAL_ONLY
+#ifndef NO_TOTAL_REDUCED
   this->doReducedSystems(redRHSs);
 #endif
 
+#ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
   for(unsigned int il=0; il < blockSize; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
 #endif
+#endif
 }
 
 void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
-  unsigned int n_l_thisp = blockSize / world.size() + (world.rank() < blockSize % world.size());
   for(unsigned int ip=0; ip < world.size(); ip++) {
     // Number of reduced solves assigned to ip
     unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
@@ -160,15 +176,18 @@ void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& re
 #endif    
 
 #ifndef NO_COLLECTIVES
+#ifdef USE_BARRIERS
+    world.barrier();
+#endif
     mpi::gather(world, sendbuf, 2*n_l_ip, recvbuf, ip);
 #endif
   }
 
 #ifndef NO_REDUCED_SOLVE
   for(unsigned int il=0; il < blockSize; il++) {
-    red_rhss[il]->copyValues(recvbuf, il, n_l_thisp);
+    red_rhss[il]->copyValues(recvbuf, il / world.size(), numLocalSolves);
     red_rhss[il]->solve();
-    red_rhss[il]->writeValues(recvbuf, il, n_l_thisp);
+    red_rhss[il]->writeValues(recvbuf, il / world.size(), numLocalSolves);
   }
 #endif
 
@@ -178,11 +197,14 @@ void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& re
       break;
 
 #ifndef NO_COLLECTIVES
+#ifdef USE_BARRIERS
+    world.barrier();
+#endif
     mpi::scatter(world, recvbuf, sendbuf, 2*n_l_ip, ip);
 #endif
 
 #ifndef COMMUNICATION_ONLY
-    for(unsigned int il=0; il*world.size() + ip < blockSize; il++) {
+    for(unsigned int il=0; il < n_l_ip; il++) {
       red_rhss[il*world.size() + ip]->getLocalPart()[0] = sendbuf[2*il];
       red_rhss[il*world.size() + ip]->getLocalPart()[1] = sendbuf[2*il+1];
     }
@@ -341,4 +363,134 @@ void NonBlockingRHSCollection::doLines(double** theLines) {
   }
   for(unsigned int il=0; il < numLocalSolves; il++) solves_done[il] = false;
   for(unsigned int il=0; il < blockSize; il++) corrections_done[il] = false;
+}
+
+void DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						    std::vector<AbstractCouplingInitializer*> coupling_inits,
+						    unsigned int block_size,
+						    mpi::communicator& world)
+  : AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
+    sendbuf(NULL),
+    recvbuf(NULL) {
+  if(world.size()==1)
+    return;
+
+  unsigned int p = world.rank();
+  if(p==0) {
+    recvbuf = new double[2*block_size*world.size()];
+  } else if (p == 1 || p == 2) {
+    recvbuf = new double[2*block_szie*world.size()/3];
+  }
+  sendbuf = new double[2*block_size];
+
+  unsigned int n_delegated = blockSize/3;
+  unsigned int delegation_size = 2*n_p*n_delegated;
+  unsigned int reduced_size = 2*(n_p-1);
+
+  for(unsigned int il=0; il < blockSize; il++) {
+    if(p == 0 && il < n_delegated + blockSize % 3)
+      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
+    else if (p == 1 && il < 2*n_delegated + blockSize % 3)
+      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
+    else if (p == 2 && il < 3*n_delegated + blockSize % 3)
+      redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
+    else
+      redRHSs[il] = new RemoteReducedRHS(couplings[il], world, blockSize, 0);
+  }
+}
+
+void DelegatedRHSCollection::doLines(double** theLines) {
+  for(unsigned int il=0; il < blockSize; il++) {
+    solvers[il]->solve(theLines[il]);
+    if(world.size()!=1) {
+      redRHSs[il]->getLocalPart()[0] = theLines[il][0];
+      redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    }
+  }
+  if(world.size()==1)
+    return;
+
+  this->doReducedSystems(redRHSs);
+
+  for(unsigned int il=0; il < blockSize; il++) {
+    couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
+  }
+}
+
+
+void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
+  }
+  mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
+
+  unsigned int n_p = world.size();
+  unsigned int p = world.rank();
+  unsigned int n_delegated = blockSize/3;
+  unsigned int delegation_size = 2*n_p*n_delegated;
+  unsigned int reduced_size = 2*(n_p-1);
+
+  if(p == 0) {
+    this->transpose(recvbuf, n_p, blockSize);
+    world.send(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
+    world.send(2, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
+    for(unsigned int il = 0; il < n_delegated + blockSize % 3; il++) {      
+      dgttrs_("T", & reducedSize, & one,
+	      red_rhss[il]->reducedLowerDiag, red_rhss[il]->reducedDiag, red_rhss[il]->reducedUpperDiag,
+	      red_rhss[il]->reducedUpperDiag2, red_rhss[il]->reducedPivotPermutations,
+	      recvbuf + 2*n_p*il + 1,
+	      & reducedSize, & info);
+    }
+    word.recv(1, 0, recvbuf + delegation_size + blockSize % 3, delegation_size);
+    word.recv(1, 0, recvbuf + 2*delegation_size + blockSize % 3, delegation_size);
+    this->transpose(recvbuf, blockSize, n_p);
+  } else if (p == 1 || p == 2) {
+    unsigned int info; unsigned int one = 1;
+    world.recv(0, 0, recvbuf, delegation_size);
+    for(unsigned int il = 0; il < n_delegated; il++) {
+      unsigned int my_i = p*n_delegated + blockSize % 3 + il;
+      dgttrs_("T", & reducedSize, & one,
+	      red_rhss[my_i]->reducedLowerDiag, red_rhss[my_i]->reducedDiag, red_rhss[my_i]->reducedUpperDiag,
+	      red_rhss[my_i]->reducedUpperDiag2, red_rhss[my_i]->reducedPivotPermutations,
+	      recvbuf + 2*n_p*il + 1,
+	      & reducedSize, & info);
+    }
+    world.send(0, 0, recvbuf, delegation_size);
+  }
+
+
+  mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
+  }
+}
+
+void DelegatedRHSCollection::transpose(double *A, int r, int c)
+{
+  int size = r*c - 1;
+  int t; // holds element to be replaced, eventually becomes next element to move
+  int next; // location of 't' to be moved
+  int cycleBegin; // holds start of cycle
+  int i; // iterator
+  bitset b; // hash to mark moved elements
+ 
+  b.reset();
+  b[0] = b[size] = 1;
+  i = 1; // Note that A[0] and A[size-1] won't move
+  while (i < size) {
+    cycleBegin = i;
+    do {
+      // Input matrix [r x c]
+      // Output matrix 1
+      // i_new = (i*r)%(N-1)
+      next = 2*((i*r)%size);
+      std::swap(A[next], A[i]);
+      std::swap(A[next+1], A[i+1])
+      b[i] = 1;
+      i = next;
+    } while (i != cycleBegin);
+ 
+    // Get Next Move (what about querying random location?)
+    for (i = 1; i < size && b[i]; i++) {}
+  }
 }

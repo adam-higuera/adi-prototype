@@ -30,18 +30,18 @@ public:
   void writeValues(double* buf, unsigned int il, unsigned int n_l_ip);
   void solve();
 
-private:
-  int one;
-  int info;
-  int reducedSize;
-  unsigned int p;
-
   double* reducedDiag;
   double* reducedUpperDiag;
   double* reducedLowerDiag;
   double* reducedUpperDiag2; //For the factorization
   int* reducedPivotPermutations; //Ditto
   double* rhsStorage;
+
+private:
+  int one;
+  int info;
+  int reducedSize;
+  unsigned int p;
 };
 
 class RemoteReducedRHS : public AbstractReducedRHS {

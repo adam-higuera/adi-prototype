@@ -19,10 +19,10 @@ PROG=${PROG_NAME##*/}
 MEASUREMENTS_DIR=${RESULTS_DIR}/hpctoolkit-${PROG}-measurements-$PBS_JOBID
 
 hpcstruct -o ${RESULTS_DIR}/emsq2d-${PBS_JOBID}.hpcstruct ${PROG_NAME}
-mpiexec hpcrun -t -o ${MEASUREMENTS_DIR} ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))
+mpiexec hpcrun -t -o ${MEASUREMENTS_DIR} ${PROG_NAME} --bynodes > ${RESULTS_DIR}/timing_s${DOMAIN_SIZE}timing_p$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))_t${NUM_STEPS}
 # mpiexec ${PROG_NAME} --bynodes > ${RESULTS_DIR}/str${DOMAIN_SIZE}timing$((${PROCS_PER_EDGE}*${PROCS_PER_EDGE}))
 
-hpcprof-mpi -o ${RESULTS_DIR} -S ${RESULTS_DIR}/emsq2d-${PBS_JOBID}.hpcstruct ${MEASUREMENTS_DIR}
+hpcprof-mpi -o ${RESULTS_DIR}/hpctoolkit-p${PROCS_PER_EDGE}-s${DOMAIN_SIZE}-${PBS_JOBID} -S ${RESULTS_DIR}/emsq2d-${PBS_JOBID}.hpcstruct ${MEASUREMENTS_DIR}
 
 rm -f ${RESULTS_DIR}/emsq2d-${PBS_JOBID}.hpcstruct
 rm -rf ${MEASUREMENTS_DIR}

@@ -4,7 +4,7 @@
 #include "LocalSolver.hpp"
 #include "MatrixInitializer.hpp"
 #include "CouplingInitializer.hpp"
-#include "RHSCommunicator.hpp"
+#include "AbstractReducedRHS.hpp"
 
 class ReducedRHSFactory {
 public:
@@ -47,6 +47,21 @@ private:
   double* sendbuf;
   double* recvbuf;
 };
+
+class DelegatedRHSCollection : public AbstractRHSCollection {
+public:
+  DelegatedRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+			 std::vector<AbstractCouplingInitializer*> coupling_inits,
+			 unsigned int block_size,
+			 mpi::communicator& world);
+
+  void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
+  void doLines(double** theLines);
+private:
+  double* sendbuf;
+  double* recvbuf;
+};
+
 
 class ChunkedRHSCollection : public AbstractRHSCollection {
 public:
