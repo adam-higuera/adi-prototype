@@ -438,6 +438,9 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
 
   if(p == 0) {
     int info; int one = 1;
+    this->transpose(recvbuf, n_p, blockSize);
+    world.send(1, 0, recvbuf + delegation_size + left_over_size, delegation_size);
+    world.send(2, 0, recvbuf + 2*delegation_size + left_over_size, delegation_size);
     for(unsigned int il = 0; il < n_delegated + left_over; il++) {
       LocalReducedRHS* theSolve = (LocalReducedRHS*)red_rhss[il];
       dgttrs_("T", & reduced_size, & one,
@@ -500,6 +503,7 @@ void AbstractRHSCollection::transpose(double *A, unsigned int r, unsigned int c)
     // Get Next Move (what about querying random location?)
     for (i = 1; i < size && b[i]; i++) {}
   }
+<<<<<<< Updated upstream
 }
 
 ThreeScatterRHSCollection::ThreeScatterRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
@@ -595,4 +599,6 @@ void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*
   for(int il=0; il < blockSize; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
+=======
+>>>>>>> Stashed changes
 }
