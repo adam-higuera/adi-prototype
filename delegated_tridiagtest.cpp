@@ -14,7 +14,7 @@ int main (int argc, char* argv []) {
   VacuumCouplingInitializer c_init(& init, 10, world);
   std::vector<AbstractCouplingInitializer*> c_inits(10, & c_init);
 
-  DelegatedRHSCollection crc(mat_inits, c_inits, 10, world);
+  ThreeScatterRHSCollection crc(mat_inits, c_inits, 10, world);
 
   double test_rhs_storage[100];
   double* test_rhs[10];

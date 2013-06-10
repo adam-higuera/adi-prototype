@@ -388,7 +388,6 @@ DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixInitial
   unsigned int reduced_size = 2*(n_p-1);
 
   for(unsigned int il=0; il < blockSize; il++) {
-    // std::cout << "HERP" << il << "_" << p << std::endl;
     if(il < n_delegated + blockSize % 3)
       redRHSs[il] = (p == 0)
 	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
@@ -401,7 +400,6 @@ DelegatedRHSCollection::DelegatedRHSCollection(std::vector<AbstractMatrixInitial
       redRHSs[il] = (p == 2)
 	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 2)
 	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 2);
-    // std::cout << "DERP" << il << "_" << p << std::endl;
   }
 }
 
@@ -440,17 +438,6 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
 
   if(p == 0) {
     int info; int one = 1;
-    for(unsigned int il = 0; il < 2*n_p*blockSize; il++) {
-      std::cout << recvbuf[il] << " ";
-    }
-    std::cout << std::endl;
-    this->transpose(recvbuf, n_p, blockSize);
-    world.send(1, 0, recvbuf + delegation_size + left_over_size, delegation_size);
-    world.send(2, 0, recvbuf + 2*delegation_size + left_over_size, delegation_size);
-    for(unsigned int il = 0; il < 2*n_p*blockSize; il++) {
-      std::cout << recvbuf[il] << " ";
-    }
-    std::cout << std::endl;
     for(unsigned int il = 0; il < n_delegated + left_over; il++) {
       LocalReducedRHS* theSolve = (LocalReducedRHS*)red_rhss[il];
       dgttrs_("T", & reduced_size, & one,
@@ -484,9 +471,8 @@ void DelegatedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& 
   }
 }
 
-void DelegatedRHSCollection::transpose(double *A, unsigned int r, unsigned int c)
+void AbstractRHSCollection::transpose(double *A, unsigned int r, unsigned int c)
 {
-  std::cout << "Entering transpose" << std::endl;
   int size = r*c - 1;
   int t; // holds element to be replaced, eventually becomes next element to move
   int next; // location of 't' to be moved
@@ -514,5 +500,99 @@ void DelegatedRHSCollection::transpose(double *A, unsigned int r, unsigned int c
     // Get Next Move (what about querying random location?)
     for (i = 1; i < size && b[i]; i++) {}
   }
-  std::cout << "Exiting transpose" << std::endl;
+}
+
+ThreeScatterRHSCollection::ThreeScatterRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+					       std::vector<AbstractCouplingInitializer*> coupling_inits,
+					       unsigned int block_size,
+					       mpi::communicator& world)
+  : AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
+    sendbuf(NULL),
+    recvbuf(NULL),
+    n_p(world.size()),
+    p(world.rank()),
+    nDelegated(block_size / 3),
+    delegationSize(2*nDelegated),// FIXME - change name to prevent confusion with Delegated member
+    leftOver(block_size % 3),
+    leftOverSize(2*leftOver),// FIXME - change name to prevent confusion with Delegated member
+    reducedSize(2*n_p-1) {
+  if(world.size()==1)
+    return;
+
+  unsigned int p = world.rank();
+  if(p==0) {
+    recvbuf = new double[2*block_size*world.size()];
+  } else if (p == 1 || p == 2) {
+    recvbuf = new double[2*block_size*world.size()/3];
+  }
+  sendbuf = new double[2*block_size];
+
+  for(unsigned int il=0; il < blockSize; il++) {
+    if(il < nDelegated + leftOver)
+      redRHSs[il] = (p == 0)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 0);
+    else if (il < 2*nDelegated + leftOver)
+      redRHSs[il] = (p == 1)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 1)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 1);
+    else if (il < 3*nDelegated + leftOver)
+      redRHSs[il] = (p == 2)
+	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 2)
+	: (AbstractReducedRHS*) new RemoteReducedRHS(couplings[il], world, blockSize, 2);
+  }
+}
+
+void ThreeScatterRHSCollection::doLines(double** theLines) {
+  for(unsigned int il=0; il < blockSize; il++) {
+    solvers[il]->solve(theLines[il]);
+    if(world.size()!=1) {
+      redRHSs[il]->getLocalPart()[0] = theLines[il][0];
+      redRHSs[il]->getLocalPart()[1] = theLines[il][blockSize-1];
+    }
+  }
+  if(world.size()==1)
+    return;
+
+  this->doReducedSystems(redRHSs);
+
+  for(unsigned int il=0; il < blockSize; il++) {
+    couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
+  }
+}
+
+void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
+  }
+  
+  for(unsigned int ip=0; ip < 3; ip++) {
+    unsigned int extraOffset = ip == 0 ? 0 : leftOverSize;
+    unsigned int extraSize = ip == 0 ? leftOverSize : 0;
+    mpi::gather(world,
+		sendbuf + delegationSize*ip + extraOffset,
+		delegationSize + extraSize, recvbuf, ip);
+  }
+
+  if (p < 3) {
+    unsigned int extraOffset = p == 0 ? 0 : leftOver;
+    unsigned int extraLines = p == 0 ? leftOver : 0;
+    for(unsigned int il=0; il < blockSize; il++) {
+      red_rhss[il]->copyValues(recvbuf, il - p*nDelegated - extraOffset, nDelegated + extraLines);
+      red_rhss[il]->solve();
+      red_rhss[il]->writeValues(recvbuf, il - p*nDelegated - extraOffset, nDelegated + extraLines);
+    }
+  }
+
+  for(unsigned int ip=0; ip < 3; ip++) {
+    unsigned int extraOffset = ip == 0 ? 0 : leftOverSize;
+    unsigned int extraSize = ip == 0 ? leftOverSize : 0;
+    mpi::scatter(world,
+		 recvbuf, sendbuf + delegationSize*ip + extraOffset,
+		 delegationSize + extraSize, ip);
+  }
+
+  for(int il=0; il < blockSize; il++) {
+    std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
+  }
 }

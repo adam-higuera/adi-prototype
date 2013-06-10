@@ -32,6 +32,7 @@ public:
   std::vector<AbstractReducedRHS*> redRHSs;
 
   double** rhsStorage;
+  void transpose(double* mat, unsigned int rows, unsigned int cols);
 };
 
 class CollectiveRHSCollection : public AbstractRHSCollection {
@@ -59,9 +60,31 @@ public:
   void doLines(double** theLines);
 
 private:
-  void transpose(double* mat, unsigned int rows, unsigned int cols);
   double* sendbuf;
   double* recvbuf;
+};
+
+class ThreeScatterRHSCollection : public AbstractRHSCollection {
+public:
+  ThreeScatterRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+			 std::vector<AbstractCouplingInitializer*> coupling_inits,
+			 unsigned int block_size,
+			 mpi::communicator& world);
+
+  void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
+  void doLines(double** theLines);
+
+private:
+  double* sendbuf;
+  double* recvbuf;
+
+  unsigned int n_p;// = world.size();
+  unsigned int p;// = world.rank();
+  unsigned int nDelegated;// = blockSize/3;
+  unsigned int delegationSize;// = 2*n_p*n_delegated;
+  unsigned int leftOver;// = blockSize % 3;
+  unsigned int leftOverSize;// = 2*n_p*left_over;
+  int reducedSize;// = 2*(n_p-1);
 };
 
 

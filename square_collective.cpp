@@ -3,7 +3,7 @@
 #include <sstream>
 #include <unistd.h>
 
-int main(int argc, char* argv []) {  
+int main(int argc, char* argv []) {
   mpi::environment env(argc, argv);
   mpi::communicator world;
 
