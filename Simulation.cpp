@@ -370,20 +370,20 @@ void pass_vector(mpi::communicator comm,
 		      bool upwards) {
   int p = comm.rank();
   int n_p = comm.size();
-  int dest = p + (upwards ? 1 : -1);
-  int src = p + (upwards ? -1 : 1);
+  int partner = p + (upwards ? 1 : -1);
+  // int src = p + (upwards ? -1 : 1);
 
 
   if(p % 2 == 0) {
-    if(src >= 0 && src < n_p)
-      comm.recv(src, 0, incoming, n);
-    if(dest < n_p && dest >= 0)
-      comm.send(dest, 0, outgoing, n);
+    if(partner >= 0 && partner < n_p) {
+      comm.recv(partner, 0, incoming, n);
+      comm.send(partner, 0, outgoing, n);
+    }
   } else {
-    if (dest < n_p && dest >= 0)
-      comm.send(dest, 0, outgoing, n);
-    if(src >= 0 && src < n_p)
-      comm.recv(src, 0, incoming, n);
+    if (partner >= 0 && partner < n_p) {
+      comm.send(partner, 0, outgoing, n);
+      comm.recv(partner, 0, incoming, n);
+    }
   }
 }
 
@@ -395,11 +395,17 @@ void Simulation::exchangeBdyValues(mpi::communicator comm, bdyDir dir) {
       BdyOutBufferBotLeft[iy] = B_z[0][iy];
     }
     if(p % 2 == 0) {
+      // std::cout << "First pass_vector on even rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferTopRight, BLeftBdy, blockSize, true);
+      // std::cout << "Second pass_vector on even rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferBotLeft, BRightBdy, blockSize, false);
+      // std::cout << "even rank done" << p <<std::endl;
     } else {
+      // std::cout << "First pass_vector on odd rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferBotLeft, BRightBdy, blockSize, false);
+      // std::cout << "Second pass_vector on odd rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferTopRight, BLeftBdy, blockSize, true);
+      // std::cout << "odd rank done" << p <<std::endl;
     }
     if(comm.rank() == 0)
       std::copy(BdyOutBufferBotLeft, BdyOutBufferBotLeft + blockSize, BLeftBdy);
@@ -411,11 +417,17 @@ void Simulation::exchangeBdyValues(mpi::communicator comm, bdyDir dir) {
       BdyOutBufferBotLeft[ix] = B_z[ix][0];
     }
     if (p % 2 == 0) {
+      // std::cout << "First pass_vector on even rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferTopRight, BBotBdy, blockSize, true);
+      // std::cout << "Second pass_vector on even rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferBotLeft, BTopBdy, blockSize, false);
+      // std::cout << "even rank done" << p <<std::endl;
     } else {
+      // std::cout << "First pass_vector on odd rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferBotLeft, BTopBdy, blockSize, false);
+      // std::cout << "Second pass_vector on odd rank" << p << std::endl;
       pass_vector(comm, BdyOutBufferTopRight, BBotBdy, blockSize, true);
+      // std::cout << "odd rank done" << p <<std::endl;
     }
     if(comm.rank() == 0)
       std::copy(BdyOutBufferBotLeft, BdyOutBufferBotLeft + blockSize, BBotBdy);
