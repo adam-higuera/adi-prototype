@@ -1,6 +1,6 @@
-LIBS=-lboost_mpi -lboost_program_options -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -openmp -lpthread
-LIB_DIR=-L/curc/tools/x_86_64/rh5/boost/1.50/openmpi/1.6/intel/12.1.4/torque/2.5.11/lib
-INC_DIR=-I/curc/tools/x_86_64/rh5/boost/1.50/openmpi/1.6/intel/12.1.4/torque/2.5.11/include
+LIBS=-lboost_mpi -lboost_serialization -lboost_program_options -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -openmp -lpthread
+LIB_DIR=-L/projects/adhi1756/boost_1_53_0/stage/lib
+INC_DIR=-I/projects/adhi1756/boost_1_53_0
 SRC_FILES=Simulation.cpp RHSCollection.cpp LocalReducedRHS.cpp RemoteReducedRHS.cpp TDCoupling.cpp LocalSolver.cpp
 LOCAL_ONLY_FLAGS=-DNO_NEAREST_NEIGHBOR -DNO_COLLECTIVES -DNO_REDUCED_SOLVE
 COMM_ONLY_FLAGS=-DCOMMUNICATION_ONLY -DNO_LOCAL_SOLVES -DNO_REDUCED_SOLVE
@@ -21,6 +21,9 @@ square-chunked-comm-only-barrier square-chunked-reduced-only-barrier square-chun
 
 one-line-yee: one_line.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g -DYEE -o $@ ${LIB_DIR} ${INC_DIR} one_line.cpp ${SRC_FILES} ${LIBS}
+
+square-yee: square_collective.cpp ${HEADERS} ${SRC_FILES}
+	mpicxx -g -DYEE -o $@ ${LIB_DIR} ${INC_DIR} square_delegated.cpp ${SRC_FILES} ${LIBS}
 
 one-line-local-only: one_line.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g ${LOCAL_ONLY_FLAGS} -o $@ ${LIB_DIR} ${INC_DIR} one_line.cpp ${SRC_FILES} ${LIBS}
@@ -154,8 +157,11 @@ square-reduced-only-dump: square_dump.cpp ${HEADERS} ${SRC_FILES}
 square-full-dump: square_dump.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} square_dump.cpp ${SRC_FILES} ${LIBS}
 
-square-delegated-full: accuracy_check_delegated.cpp ${HEADERS} ${SRC_FILES}
-	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check_delegated.cpp ${SRC_FILES} ${LIBS}
+square-delegated-full: square_delegated.cpp ${HEADERS} ${SRC_FILES}
+	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} square_delegated.cpp ${SRC_FILES} ${LIBS}
+
+square-three-scatter: square_three_scatter.cpp ${HEADERS} ${SRC_FILES}
+	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} square_three_scatter.cpp ${SRC_FILES} ${LIBS}
 
 accuracy-check-delegated: accuracy_check_delegated.cpp ${HEADERS} ${SRC_FILES}
 	mpicxx -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check_delegated.cpp ${SRC_FILES} ${LIBS}

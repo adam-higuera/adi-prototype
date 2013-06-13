@@ -67,6 +67,9 @@ protected:
   double B_ll_corner;
   double B_lr_corner;
 
+  double preFactorX;
+  double preFactorY;
+
   double* BdyOutBufferTopRight;
   double* BdyOutBufferBotLeft;
 

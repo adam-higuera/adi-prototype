@@ -503,7 +503,6 @@ void AbstractRHSCollection::transpose(double *A, unsigned int r, unsigned int c)
     // Get Next Move (what about querying random location?)
     for (i = 1; i < size && b[i]; i++) {}
   }
-<<<<<<< Updated upstream
 }
 
 ThreeScatterRHSCollection::ThreeScatterRHSCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
@@ -599,6 +598,4 @@ void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*
   for(int il=0; il < blockSize; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
-=======
->>>>>>> Stashed changes
 }

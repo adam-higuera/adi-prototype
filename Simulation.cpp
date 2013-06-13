@@ -32,6 +32,8 @@ Simulation::Simulation(
   dy(L_y/n_cells),
   dt(T/n_steps),
   blockSize(block_size),
+  preFactorX(LIGHTSPEED*dt/(2*dx)),
+  preFactorY(LIGHTSPEED*dt/(2*dy)),
   E_x(new double*[blockSize]),
   E_y(new double*[blockSize+1]),
   B_z(new double*[blockSize]),
@@ -276,30 +278,29 @@ void Simulation::implicitPSubstituteB() {
 #endif
 }
 
-void Simulation::yeeUpdate() {
+void Simulation::yeeUpdate() {  
 #ifndef YEE_NO_COMM
   this->exchangeBdyValues(xLine, BDY_X);
   this->exchangeBdyValues(yLine, BDY_Y);
 #endif
+
   for(unsigned int ix=0; ix < this->blockSize; ix++) {    
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
-      B_z[ix][iy] += LIGHTSPEED*dt/(2*dy) * ((E_x[ix][iy+1] - E_x[ix][iy]) - (E_y[ix+1][iy] - E_y[ix][iy]));
+      B_z[ix][iy] += preFactorX * ((E_x[ix][iy+1] - E_x[ix][iy]) - (E_y[ix+1][iy] - E_y[ix][iy]));
     }
   }
   for(unsigned int ix=0; ix < blockSize+1; ix++) {
     for(unsigned int iy=0; iy < this->blockSize+1; iy++) {
-      double B_above = (iy != blockSize) ? B_z[0][iy] :
-	(ix != blockSize) ? BTopBdy[ix] : BTopBdy[ix-1];
-      double B_below = (iy != 0) ? B_z[0][iy-1] :
-	(ix != blockSize) ? BBotBdy[ix] : BBotBdy[ix-1];
-      double B_left = (ix != 0) ? B_z[0][ix-1] :
-	(iy != blockSize) ? BLeftBdy[iy] : BTopBdy[0];
-      double B_right = (ix != blockSize) ? B_z[0][ix] :
-	(iy != blockSize) ? BRightBdy[iy] : BTopBdy[blockSize-1];
-      if(iy < blockSize)
-	E_y[ix][iy] -= LIGHTSPEED*dt/(2*dx) * (B_right - B_left);
-      if(ix < blockSize) 
-	E_x[ix][iy] += LIGHTSPEED*dt/(2*dy) * (B_above - B_below);
+      if(iy < blockSize) {
+	double B_left = (ix != 0) ? B_z[ix-1][iy] : BLeftBdy[iy];
+	double B_right = (ix != blockSize) ? B_z[ix][iy] : BRightBdy[iy];
+	E_y[ix][iy] -= preFactorX * (B_right - B_left);
+      }
+      if(ix < blockSize) {
+	double B_above = (iy != blockSize) ? B_z[ix][iy] : BTopBdy[ix];
+	double B_below = (iy != 0) ? B_z[ix][iy-1] : BBotBdy[ix];
+	E_x[ix][iy] += preFactorY * (B_above - B_below);
+      }
     }
   }
 }
@@ -387,13 +388,19 @@ void pass_vector(mpi::communicator comm,
 }
 
 void Simulation::exchangeBdyValues(mpi::communicator comm, bdyDir dir) {
+  unsigned int p = world.rank();
   if(dir == BDY_X) {
     for(unsigned int iy=0; iy < this->blockSize; iy++) {
       BdyOutBufferTopRight[iy] = B_z[blockSize-1][iy];
       BdyOutBufferBotLeft[iy] = B_z[0][iy];
     }
-    pass_vector(comm, BdyOutBufferTopRight, BLeftBdy, blockSize, true);
-    pass_vector(comm, BdyOutBufferBotLeft, BRightBdy, blockSize, false);
+    if(p % 2 == 0) {
+      pass_vector(comm, BdyOutBufferTopRight, BLeftBdy, blockSize, true);
+      pass_vector(comm, BdyOutBufferBotLeft, BRightBdy, blockSize, false);
+    } else {
+      pass_vector(comm, BdyOutBufferBotLeft, BRightBdy, blockSize, false);
+      pass_vector(comm, BdyOutBufferTopRight, BLeftBdy, blockSize, true);
+    }
     if(comm.rank() == 0)
       std::copy(BdyOutBufferBotLeft, BdyOutBufferBotLeft + blockSize, BLeftBdy);
     if(comm.rank() == comm.size() - 1)
@@ -403,8 +410,13 @@ void Simulation::exchangeBdyValues(mpi::communicator comm, bdyDir dir) {
       BdyOutBufferTopRight[ix] = B_z[ix][blockSize-1];
       BdyOutBufferBotLeft[ix] = B_z[ix][0];
     }
-    pass_vector(comm, BdyOutBufferTopRight, BBotBdy, blockSize, true);
-    pass_vector(comm, BdyOutBufferBotLeft, BTopBdy, blockSize, false);
+    if (p % 2 == 0) {
+      pass_vector(comm, BdyOutBufferTopRight, BBotBdy, blockSize, true);
+      pass_vector(comm, BdyOutBufferBotLeft, BTopBdy, blockSize, false);
+    } else {
+      pass_vector(comm, BdyOutBufferBotLeft, BTopBdy, blockSize, false);
+      pass_vector(comm, BdyOutBufferTopRight, BBotBdy, blockSize, true);
+    }
     if(comm.rank() == 0)
       std::copy(BdyOutBufferBotLeft, BdyOutBufferBotLeft + blockSize, BBotBdy);
     if(comm.rank() == comm.size() - 1)

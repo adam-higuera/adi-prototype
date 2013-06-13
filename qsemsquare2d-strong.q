@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#PBS -l walltime=0:10:0
+#PBS -l walltime=0:15:0
 #PBS -l nodes=3:ppn=3
 #PBS -q lazy
 #PBS -N emsquare2d50_9
@@ -8,10 +8,11 @@
 #PBS -e emsq2d25procs.err
 #PBS -V
 
-source /curc/tools/utils/dkinit
 
-use .hpctoolkit_5.3.2_openmpi-1.6.3_intel-13.0.0_torque-2.5.11_ib
-use .boost-1.50_openmpi-1.6_intel-12.1.4_torque-2.5.11_ib
+module load intel/intel-13.0.0
+module load openmpi/openmpi-1.6.4_intel-13.0.0_torque-4.2.3_ib
+module load hpctoolkit/hpctoolkit-5.3.2_openmpi-1.7.0_gcc-4.8.0_torque-4.1.4
+LD_LIBRARY_PATH=/projects/adhi1756/boost_1_53_0/stage/lib:$LD_LIBRARY_PATH
 
 cd /projects/adhi1756/adi-prototype
 
