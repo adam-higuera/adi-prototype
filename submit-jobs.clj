@@ -13,23 +13,23 @@
 ;     (str "-l nodes=" edge-procs ":ppn=" edge-procs)
 ;     (str "-l nodes=" (quot (expt edge-procs 2) 8) ":ppn=8+1:ppn=" (rem (expt edge-procs 2) 8))))
 
-(defn get-resource-list [edge-procs n-procs square]                                                                                                                                           
-  (let [procs (if square (expt edge-procs 2) edge-procs)
+(defn get-resource-list [edge-procs n-procs dims]                                                                                                                                           
+  (let [procs (expt edge-procs dims)
          remainder (rem procs n-procs)
          rem-string (if (== 0 remainder) "" (str "+1:ppn=" remainder))]
     (str "-l nodes=" (quot procs n-procs) ":ppn=" n-procs rem-string)))
 
-(defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name square time-steps wall-time]
+(defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name dims time-steps wall-time]
   (clojure.java.shell/sh "qsub"
                          (str "-l walltime=0:" wall-time ":0")
-                         (get-resource-list edge-procs procs-per-node square)
+                         (get-resource-list edge-procs procs-per-node dims)
                          (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
                               ",PROG_NAME=" executable
                               ",RESULTS_DIR=" results-directory
                               ",NUM_STEPS=" time-steps)
                          (str "-N" executable domain-size "_" edge-procs)
                          (str "-q" q)
-                         (str "-e" results-directory "/err_size" domain-size "procs" edge-procs)
+                         (str "-e" results-directory "/" executable "err_size" domain-size "procs" edge-procs)
                          script-name))
 
 ; ./submit-jobs.clj -s [40] -p [10 20 30 40 50] -e emsquare2d-one-line -n 12 -q janus-short -d /lustre/adhi1756/comm_only
@@ -43,7 +43,7 @@
            ["-q" "--queue" "Submit to this queue"]
            ["-n" "--procs-per-node" "Number of processors per node on the cluster" :parse-fn #(read-string %)]
            ["-x" "--submission-script-name" "Name of the script to run"]
-           ["-sq" "--[no-]square" :default true]
+           ["-dim" "--dimensions" :parse-fn #(read-string %) :default 2]
            ["-t" "--time-steps" :parse-fn #(read-string %) :default [10000]]
            ["-w" "--wall-time" :parse-fn #(read-string %) :default [10]]))
       executable (if (contains? args-hash :executable-name) (:executable-name args-hash) "emsquare2d-strong")
@@ -56,9 +56,9 @@
       wall-time (:wall-time args-hash)
       script-name (if (contains? args-hash :submission-script-name) (:submission-script-name args-hash) "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q")
       ;; script-name "/projects/adhi1756/adi-prototype/qsemsquare2d-strong.q"
-      square (:square args-hash)]
+      dims (:dimensions args-hash)]
   (doseq [domain-size (:domain-sizes args-hash)
           edge-procs (:edge-procs args-hash)
           ts time-steps
           wt wall-time]
-    (println (submit-job domain-size edge-procs executable results-directory q procs-per-node script-name square ts wt))))
+    (println (submit-job domain-size edge-procs executable results-directory q procs-per-node script-name dims ts wt))))
