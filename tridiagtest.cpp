@@ -1,4 +1,4 @@
-#include "RHSCollection.hpp"
+include "RHSCollection.hpp"
 #include <fstream>
 #include <iomanip>
 
@@ -11,43 +11,47 @@ int main (int argc, char* argv []) {
   mpi::communicator world;
 
   TestMatrixInitializer init;
-  std::vector<AbstractMatrixInitializer*> mat_inits(9, & init);
-  VacuumCouplingInitializer c_init(& init, 9, world);
-  std::vector<AbstractCouplingInitializer*> c_inits(9, & c_init);
+  std::vector<AbstractMatrixInitializer*> mat_inits(81, & init);
+  VacuumCouplingInitializer c_init(& init, 81, world);
+  std::vector<AbstractCouplingInitializer*> c_inits(81, & c_init);
 
+  std::cout << "Entering constructor" << world.rank() << std::endl;
   CollectiveRHSCollection crc(mat_inits, c_inits, 9, world);
+  std::cout << "Exiting constructor" << world.rank() << std::endl;
 
-  double test_rhs_storage[81];
-  double* test_rhs[9];
+  double test_rhs_storage[81*9];
+  double* test_rhs[81];
 
-  std::fill_n(test_rhs_storage, 81, 0);
+  std::fill_n(test_rhs_storage, 81*9, 0);
 
-  for(int i = 0; i < 9; i++) {
+  for(int i = 0; i < 81; i++) {
     test_rhs_storage[i*9 + 0] = 1;
     // test_rhs_storage[i*9 + 8] = 1;
     test_rhs[i] = & test_rhs_storage[i*9];
   }
 
   int dummy;
-  std::ios_base::openmode om = (world.rank() == 0 && iy == 0) ? std::ios::out : std::ios::app;
+  // std::ios_base::openmode om = (world.rank() == 0 && iy == 0) ? std::ios::out : std::ios::app;
 
-  std::ofstream dump("tdtest", om);
-  if (world.rank() != 0)
-    world.recv(world.rank()-1, 0, dummy);
-  for(int i=0; i < 9; i++) {
-    dump << test_rhs[0][i] << " ";
-  }
-  dump.flush();
-  if (world.rank()+1 < world.size()) {
-    world.send(world.rank()+1, 0, dummy);
-  }
-  if(world.rank() == 4)
-    std::cout << std::endl << std::endl;
+  // std::ofstream dump("tdtest", om);
+  // if (world.rank() != 0)
+  //   world.recv(world.rank()-1, 0, dummy);
+  // for(int i=0; i < 9; i++) {
+  //   dump << test_rhs[0][i] << " ";
+  // }
+  // dump.flush();
+  // if (world.rank()+1 < world.size()) {
+  //   world.send(world.rank()+1, 0, dummy);
+  // }
+  // if(world.rank() == 4)
+  //   std::cout << std::endl << std::endl;
 
   world.barrier();
+  std::cout << "Entering do_lines" << world.rank() << std::endl;
   crc.doLines(test_rhs);
+  std::cout << "Exiting do_lines" << world.rank() << std::endl;
 
-  for(unsigned int il = 0; il < 9; il++) {
+  for(unsigned int il = 0; il < 81; il++) {
     if(world.rank() != 0)
       world.recv(world.rank() - 1, 0, dummy);
     else if (il != 0)
@@ -59,16 +63,17 @@ int main (int argc, char* argv []) {
     for(unsigned int ix = 0; ix < 9; ix++) {
       dump << test_rhs[il][ix];
       if (ix != 9-1 || world.rank() != world.size() - 1)
-	dump << ", ";
+	dump << " ";
     }
     if(world.rank() == world.size() - 1)
       dump << "\n";
     dump.flush();
     if(world.rank() != world.size() - 1)
       world.send(world.rank()+1, 0, dummy);
-    else if (il != 9 - 1)
+    else if (il != 81 - 1)
       world.send(0, 0, dummy);
   }
+
   if(world.rank() == 4) {
     std::ofstream dump("tdtest.txt", std::ios::app);
 

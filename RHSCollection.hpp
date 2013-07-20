@@ -22,6 +22,7 @@ public:
 			mpi::communicator& world);
   virtual void doLines(double** theLines)=0;
 
+  unsigned int nLines;
   ReducedRHSFactory theFactory;
   unsigned int blockSize;
   mpi::communicator& world;

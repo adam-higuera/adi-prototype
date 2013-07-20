@@ -25,13 +25,13 @@ int main(int argc, char* argv []) {
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_procs = static_cast<unsigned int>(pow(world.size(), 1.0/3.0));
   unsigned int n_cells = block_size*n_procs;
-  TEmnlInitializer<1,1,1, CollectiveRHSCollection>
+  ShiftedTEmnlInitializer<1,1,1, CollectiveRHSCollection>
     init(.1/n_cells, .1/n_cells, .1/n_cells, .1, .1, .1,
 	 block_size);
 
-  double simulation_time=10*sqrt(2)*(.1)/LIGHTSPEED; // Run for 10 periods
-  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 10000,
+  double simulation_time=10*sqrt(2)*(.1)/LIGHTSPEED/1.0; // Run for 10 periods
+  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 100,
 			      n_procs, n_procs, n_procs, block_size, dump_directory, & init, world);
 
-  the_simulation.simulate(false, 100, 10);
+  the_simulation.simulate(true, 10, 10);
 }

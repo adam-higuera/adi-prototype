@@ -2,7 +2,8 @@
 
 (use '[leiningen.exec :only  (deps)])
 (deps '[[org.clojure/math.numeric-tower "0.0.1"]
-	[org.clojure/tools.cli "0.2.2"]])
+	[org.clojure/tools.cli "0.2.2"]
+        [me.raynes/fs "1.4.4"]])
 
 (use 'clojure.math.numeric-tower)
 (use '[clojure.tools.cli :only [cli]])
@@ -13,24 +14,26 @@
 ;     (str "-l nodes=" edge-procs ":ppn=" edge-procs)
 ;     (str "-l nodes=" (quot (expt edge-procs 2) 8) ":ppn=8+1:ppn=" (rem (expt edge-procs 2) 8))))
 
-(defn get-resource-list [edge-procs n-procs dims]                                                                                                                                           
-  (let [procs (expt edge-procs dims)
-         remainder (rem procs n-procs)
-         rem-string (if (== 0 remainder) "" (str "+1:ppn=" remainder))]
-    (str "-l nodes=" (quot procs n-procs) ":ppn=" n-procs rem-string)))
+(defn get-resource-list [edge-procs n-procs dims]                                                              (let [procs (expt edge-procs dims)
+        remainder (rem procs n-procs)
+        rem-string (if (== 0 remainder) "" (str "+1:ppn=" remainder))]
+                                                                                                                 (if (> (quot procs n-procs) 0)
+                                                                                                                   (str "-l nodes=" (quot procs n-procs) ":ppn=" n-procs rem-string)
+                                                                                                                   (str "-l nodes=1:ppn=" (rem procs n-procs)))))
 
 (defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name dims time-steps wall-time]
-  (clojure.java.shell/sh "qsub"
-                         (str "-l walltime=0:" wall-time ":0")
-                         (get-resource-list edge-procs procs-per-node dims)
-                         (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
-                              ",PROG_NAME=" executable
-                              ",RESULTS_DIR=" results-directory
-                              ",NUM_STEPS=" time-steps)
-                         (str "-N" executable domain-size "_" edge-procs)
-                         (str "-q" q)
-                         (str "-e" results-directory "/" executable "err_size" domain-size "procs" edge-procs)
-                         script-name))
+  (let [exec-name (re-find #"[^/]*$" executable)]
+    (clojure.java.shell/sh "qsub"
+                           (str "-l walltime=0:" wall-time ":0")
+                           (get-resource-list edge-procs procs-per-node dims)
+                           (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
+                                ",PROG_NAME=" executable
+                                ",RESULTS_DIR=" results-directory
+                                ",NUM_STEPS=" time-steps)
+                           (str "-N" executable domain-size "_" edge-procs)
+                           (str "-q" q)
+                           (str "-e" results-directory "/" exec-name "err_size" domain-size "procs" edge-procs)
+                           script-name)))
 
 ; ./submit-jobs.clj -s [40] -p [10 20 30 40 50] -e emsquare2d-one-line -n 12 -q janus-short -d /lustre/adhi1756/comm_only
 

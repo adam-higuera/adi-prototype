@@ -10,6 +10,7 @@ public:
 			  double L_x, double L_y, double L_z,
 			  unsigned int block_size);
   virtual void populate(double* E, double* B, unsigned int ix, unsigned int iy, unsigned int iz) = 0;
+  virtual void populateGuard(double* guard_ptr_E, double* guard_ptr_B, int ix, int iy, int iz) = 0;
   virtual AbstractRHSCollection* initCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
 						std::vector<AbstractCouplingInitializer*> c_inits,
 						unsigned int block_size,
@@ -55,6 +56,7 @@ public:
 
   unsigned int blockSize;
   unsigned int nSteps;
+  unsigned int currentStep;
 
   mpi::communicator xLine, yLine, zLine;
   mpi::communicator& world;
@@ -88,12 +90,11 @@ public:
   double*** allocateGuardStorage();
   void initFields(Simulation3DInitializer* init);
 
-  void fillSendbufX(unsigned int ix);
-  void fillSendbufY(unsigned int iy);  
-  void fillSendbufZ(unsigned int iz);
+  void fillSendbufX(unsigned int ix, double* F);
+  void fillSendbufY(unsigned int iy, double* F);
+  void fillSendbufZ(unsigned int iz, double* F);
 
-  void getGuardB();
-  void exchangeData(double* guardStorage, double* sendbuf, mpi::communicator& world, commDir d);
+  void getGuardF(double* F, double*** guardF, commDir dir);
 
   virtual void implicitUpdateM();
   virtual void explicitUpdateP();
@@ -138,6 +139,66 @@ public:
     B_ptr[0] = (-k_x/k_y)*k_z*sin(k_x*x_B)*cos(k_y*y_B)*cos(k_z*z_B);
     B_ptr[1] = -k_z*cos(k_x*x_B)*sin(k_y*y_B)*cos(k_z*z_B);
     B_ptr[2] = (k_x/k_y*k_x + k_y)*cos(k_x*x_B)*cos(k_y*y_B)*sin(k_z*z_B);
+  }
+
+  virtual void populateGuard(double* guard_ptr_E, double* guard_ptr_B,
+			     int ix, int iy, int iz) {
+    double x_E = x_offset + ix*dx; double x_B = x_offset + (ix + 0.5)*dx;
+    double y_E = y_offset + iy*dx; double y_B = y_offset + (iy + 0.5)*dy;
+    double z_E = z_offset + iz*dz; double z_B = z_offset + (iz + 0.5)*dz;
+
+    guard_ptr_E[0] = 0; guard_ptr_E[1] = 0; guard_ptr_E[2] = 0;
+    guard_ptr_B[0] = (-k_x/k_y)*k_z*sin(k_x*x_B)*cos(k_y*y_B)*cos(k_z*z_B);
+    guard_ptr_B[1] = -k_z*cos(k_x*x_B)*sin(k_y*y_B)*cos(k_z*z_B);
+    guard_ptr_B[2] = (k_x/k_y*k_x + k_y)*cos(k_x*x_B)*cos(k_y*y_B)*sin(k_z*z_B);
+  }
+
+  virtual AbstractRHSCollection* initCollection(std::vector<AbstractMatrixInitializer*> mat_inits,
+						std::vector<AbstractCouplingInitializer*> c_inits,
+						unsigned int block_size,
+						mpi::communicator& comm) {
+    return new T(mat_inits, c_inits, block_size, comm);
+  }
+
+  double k_x;
+  double k_y;
+  double k_z;
+};
+
+template<int m, int n, int l, typename T>
+class ShiftedTEmnlInitializer : public Simulation3DInitializer {
+public:
+  ShiftedTEmnlInitializer(double dx, double dy, double dz,
+			  double L_x, double L_y, double L_z,
+			  unsigned int block_size)
+    : Simulation3DInitializer(dx, dy, dz, L_x, L_y, L_z, block_size),
+      k_x(m*M_PI/L_x), k_y(n*M_PI/L_y), k_z(l*M_PI/L_z) {}
+
+  virtual void populate(double* E, double* B,
+			unsigned int ix, unsigned int iy, unsigned int iz) {
+    double x_E = x_offset + ix*dx; double x_B = x_offset + (ix + 0.5)*dx;
+    double y_E = y_offset + iy*dx; double y_B = y_offset + (iy + 0.5)*dy;
+    double z_E = z_offset + iz*dz; double z_B = z_offset + (iz + 0.5)*dz;
+
+    unsigned int field_offset = ((blockSize*ix + iy)*blockSize + iz)*3;
+
+    double* E_ptr = E + field_offset; double* B_ptr = B + field_offset;
+    B_ptr[0] = 0; B_ptr[1] = 0; B_ptr[2] = 0;
+    E_ptr[0] = cos(k_x*(x_E + 0.5*dx))*sin(k_y*y_E)*sin(k_z*z_E);
+    E_ptr[1] = -k_x/k_y*sin(k_x*x_E)*cos(k_y*(y_E + 0.5*dy))*sin(k_z*z_E);
+    E_ptr[2] = 0;
+  }
+
+  virtual void populateGuard(double* guard_ptr_E, double* guard_ptr_B,
+			     int ix, int iy, int iz) {
+    double x_E = x_offset + ix*dx; double x_B = x_offset + (ix + 0.5)*dx;
+    double y_E = y_offset + iy*dx; double y_B = y_offset + (iy + 0.5)*dy;
+    double z_E = z_offset + iz*dz; double z_B = z_offset + (iz + 0.5)*dz;
+
+    guard_ptr_B[0] = 0; guard_ptr_B[1] = 0; guard_ptr_B[2] = 0;
+    guard_ptr_E[0] = cos(k_x*(x_E + 0.5*dx))*sin(k_y*y_E)*sin(k_z*z_E);
+    guard_ptr_E[1] = -k_x/k_y*sin(k_x*x_E)*cos(k_y*(y_E + 0.5*dy))*sin(k_z*z_E);
+    guard_ptr_E[2] = 0;
   }
 
   virtual AbstractRHSCollection* initCollection(std::vector<AbstractMatrixInitializer*> mat_inits,

@@ -13,16 +13,17 @@ AbstractRHSCollection::AbstractRHSCollection(std::vector<AbstractMatrixInitializ
 					     std::vector<AbstractCouplingInitializer*> coupling_inits,
 					     unsigned int block_size, mpi::communicator& world)
   :  world(world),
+     nLines(mat_inits.size()),
      blockSize(block_size),
-     couplings(block_size, NULL),
-     solvers(block_size, NULL),
-     redRHSs(block_size, NULL),
-     rhsStorage(new double*[block_size]),
+     couplings(nLines, NULL),
+     solvers(nLines, NULL),
+     redRHSs(nLines, NULL),
+     rhsStorage(new double*[nLines]),
      theFactory(world)
 {
-  rhsStorage[0] = new double[blockSize*blockSize];
-  for(unsigned int il=0; il < blockSize; il++) {
-    if(il < blockSize-1)
+  rhsStorage[0] = new double[blockSize*nLines];
+  for(unsigned int il=0; il < nLines; il++) {
+    if(il < nLines-1)
       rhsStorage[il+1] = rhsStorage[il] + blockSize;
     solvers[il] = new LocalSolver(mat_inits[il], blockSize);
     couplings[il] = new TDCoupling(coupling_inits[il], solvers[il], blockSize);
@@ -40,10 +41,10 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
   if(world.size()==1)
     return;
   if(world.rank()==0) {
-    recvbuf = new double[2*block_size*world.size()];
+    recvbuf = new double[2*nLines*world.size()];
   }
-  sendbuf = new double[2*block_size];
-  for(unsigned int il=0; il < blockSize; il++) {
+  sendbuf = new double[2*nLines];
+  for(unsigned int il=0; il < nLines; il++) {
     if(world.rank() == 0)
       redRHSs[il] = new LocalReducedRHS(couplings[il], world, blockSize, 0);
     else
@@ -54,7 +55,7 @@ CollectiveRHSCollection::CollectiveRHSCollection(std::vector<AbstractMatrixIniti
 void CollectiveRHSCollection::doLines(double** theLines) {
 #ifndef TOTAL_REDUCED_ONLY
 #ifndef NO_LOCAL_SOLVES
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     solvers[il]->solve(theLines[il]);
     if(world.size()!=1) {
       redRHSs[il]->getLocalPart()[0] = theLines[il][0];
@@ -71,7 +72,7 @@ void CollectiveRHSCollection::doLines(double** theLines) {
 #endif
 #ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
 #endif
@@ -80,7 +81,7 @@ void CollectiveRHSCollection::doLines(double** theLines) {
 
 void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
 #ifndef COMMUNICATION_ONLY
-  for(int il=0; il < blockSize; il++) {
+  for(int il=0; il < nLines; il++) {
     std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
   }
 #endif
@@ -88,14 +89,14 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>&
 #ifdef USE_BARRIERS
   world.barrier();
 #endif
-  mpi::gather(world, sendbuf, 2*blockSize, recvbuf, 0);
+  mpi::gather(world, sendbuf, 2*nLines, recvbuf, 0);
 #endif
 
 #ifndef NO_REDUCED_SOLVE
-  for(unsigned int il=0; il < blockSize; il++) {
-    red_rhss[il]->copyValues(recvbuf, il, blockSize);
+  for(unsigned int il=0; il < nLines; il++) {
+    red_rhss[il]->copyValues(recvbuf, il, nLines);
     red_rhss[il]->solve();
-    red_rhss[il]->writeValues(recvbuf, il, blockSize);
+    red_rhss[il]->writeValues(recvbuf, il, nLines);
   }
 #endif
 
@@ -103,10 +104,10 @@ void CollectiveRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>&
 #ifdef USE_BARRIERS
   world.barrier();
 #endif
-  mpi::scatter(world, recvbuf, sendbuf, 2*blockSize, 0);
+  mpi::scatter(world, recvbuf, sendbuf, 2*nLines, 0);
 #endif
 #ifndef COMMUNICATION_ONLY
-  for(int il=0; il < blockSize; il++) {
+  for(int il=0; il < nLines; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
 #endif
@@ -120,9 +121,9 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
      sendbuf(new double[2*(block_size / world.size() + 1)]) {
   if(world.size()==1)
     return;
-  numLocalSolves = block_size / world.size() + (world.rank() < block_size % world.size());
+  numLocalSolves = nLines / world.size() + (world.rank() < nLines % world.size());
   recvbuf = new double[2*world.size()*numLocalSolves];
-  for(unsigned int il=0; il < blockSize; il++)
+  for(unsigned int il=0; il < nLines; il++)
     redRHSs[il] = (world.rank() == il % world.size()
 		   ? (AbstractReducedRHS*)
 		   new LocalReducedRHS(couplings[il], world, blockSize, il % world.size())
@@ -162,7 +163,7 @@ void ChunkedRHSCollection::doLines(double** theLines) {
 void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
   for(unsigned int ip=0; ip < world.size(); ip++) {
     // Number of reduced solves assigned to ip
-    unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
+    unsigned int n_l_ip = nLines / world.size() + (ip < nLines % world.size());
     // Get ready to send local part of reduced system assigned to processor ip
     if(n_l_ip == 0)
       break;
@@ -191,7 +192,7 @@ void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& re
 #endif
 
   for(unsigned int ip=0; ip < world.size(); ip++) {
-    unsigned int n_l_ip = blockSize / world.size() + (ip < blockSize % world.size());
+    unsigned int n_l_ip = nLines / world.size() + (ip < blockSize % world.size());
     if(n_l_ip == 0)
       break;
 
@@ -514,23 +515,23 @@ ThreeScatterRHSCollection::ThreeScatterRHSCollection(std::vector<AbstractMatrixI
     recvbuf(NULL),
     n_p(world.size()),
     p(world.rank()),
-    nDelegated(block_size / 3),
+    nDelegated(nLines / 3),
     delegationSize(2*nDelegated),// FIXME - change name to prevent confusion with Delegated member
-    leftOver(block_size % 3),
+    leftOver(nLines % 3),
     leftOverSize(2*leftOver),// FIXME - change name to prevent confusion with Delegated member
-    reducedSize(2*n_p-1) {
+    reducedSize(2*n_p-2) {
   if(world.size()==1)
     return;
 
   unsigned int p = world.rank();
   if(p==0) {
-    recvbuf = new double[2*block_size*world.size()];
+    recvbuf = new double[2*nLines*world.size()];
   } else if (p == 1 || p == 2) {
-    recvbuf = new double[2*block_size*world.size()/3];
+    recvbuf = new double[2*nLines*world.size()/3];
   }
-  sendbuf = new double[2*block_size];
+  sendbuf = new double[2*nLines];
 
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     if(il < nDelegated + leftOver)
       redRHSs[il] = (p == 0)
 	? (AbstractReducedRHS*) new LocalReducedRHS(couplings[il], world, blockSize, 0)
@@ -547,7 +548,7 @@ ThreeScatterRHSCollection::ThreeScatterRHSCollection(std::vector<AbstractMatrixI
 }
 
 void ThreeScatterRHSCollection::doLines(double** theLines) {
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     solvers[il]->solve(theLines[il]);
     if(world.size()!=1) {
       redRHSs[il]->getLocalPart()[0] = theLines[il][0];
@@ -559,13 +560,13 @@ void ThreeScatterRHSCollection::doLines(double** theLines) {
 
   this->doReducedSystems(redRHSs);
 
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
 }
 
 void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss) {
-  for(int il=0; il < blockSize; il++) {
+  for(int il=0; il < nLines; il++) {
     std::memcpy(sendbuf + 2*il, red_rhss[il]->getLocalPart(), 2*sizeof(double));
   }
   
@@ -580,7 +581,7 @@ void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*
   if (p < 3) {
     unsigned int extraOffset = p == 0 ? 0 : leftOver;
     unsigned int extraLines = p == 0 ? leftOver : 0;
-    for(unsigned int il=0; il < blockSize; il++) {
+    for(unsigned int il=0; il < nLines; il++) {
       red_rhss[il]->copyValues(recvbuf, il - p*nDelegated - extraOffset, nDelegated + extraLines);
       red_rhss[il]->solve();
       red_rhss[il]->writeValues(recvbuf, il - p*nDelegated - extraOffset, nDelegated + extraLines);
@@ -595,7 +596,7 @@ void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*
 		 delegationSize + extraSize, ip);
   }
 
-  for(int il=0; il < blockSize; il++) {
+  for(int il=0; il < nLines; il++) {
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
 }

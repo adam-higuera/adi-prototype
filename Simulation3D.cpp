@@ -1,4 +1,5 @@
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <iomanip>
 #include "hdf5.h"
@@ -26,9 +27,10 @@ Simulation3D::Simulation3D(double L_x, double L_y, double L_z,
 			   Simulation3DInitializer* init, mpi::communicator & world) :
   world(world),
   xLine(world.split(world.rank() / procs_x)),
-  yLine(world.split(world.rank() % procs_x + world.rank() / (procs_x*procs_y))),
+  yLine(world.split(world.rank() % procs_x + (world.rank() / (procs_x*procs_y)) * procs_x)),
   zLine(world.split(world.rank() % (procs_x*procs_y))),
   nSteps(n_steps),
+  currentStep(0),
   dx(L_x/n_cells),
   dy(L_y/n_cells),
   dz(L_z/n_cells),
@@ -48,10 +50,10 @@ Simulation3D::Simulation3D(double L_x, double L_y, double L_z,
   rhs_ptrs_z(new double*[blockSize*blockSize]),
   dumpDir(dump_dir)
 {
-  procsX = xLine.rank();
-  procsY = yLine.rank();
-  procsZ = zLine.rank();
-  
+  procsX = xLine.size();
+  procsY = yLine.size();
+  procsZ = zLine.size();
+
   VacuumMatrixInitializer mat_init_x = VacuumMatrixInitializer(dx, dt, blockSize, determineBoundary(xLine));
   VacuumMatrixInitializer mat_init_y = VacuumMatrixInitializer(dy, dt, blockSize, determineBoundary(yLine));
   VacuumMatrixInitializer mat_init_z = VacuumMatrixInitializer(dz, dt, blockSize, determineBoundary(zLine));
@@ -59,22 +61,22 @@ Simulation3D::Simulation3D(double L_x, double L_y, double L_z,
   VacuumCouplingInitializer coupling_init_y = VacuumCouplingInitializer(& mat_init_y, blockSize, yLine);
   VacuumCouplingInitializer coupling_init_z = VacuumCouplingInitializer(& mat_init_z, blockSize, zLine);
 
-  std::vector<AbstractMatrixInitializer*> mat_inits_x(blockSize, & mat_init_x);
-  std::vector<AbstractMatrixInitializer*> mat_inits_y(blockSize, & mat_init_y);
-  std::vector<AbstractMatrixInitializer*> mat_inits_z(blockSize, & mat_init_z);  
-  std::vector<AbstractCouplingInitializer*> coupling_inits_x(blockSize, & coupling_init_x);
-  std::vector<AbstractCouplingInitializer*> coupling_inits_y(blockSize, & coupling_init_y);
-  std::vector<AbstractCouplingInitializer*> coupling_inits_z(blockSize, & coupling_init_z);
-
-  init->setOffsets(xLine, yLine, zLine);
-  initFields(init);
-  
-  xUpdateRHSs = init->initCollection(mat_inits_x, coupling_inits_x, blockSize, xLine);
-  yUpdateRHSs = init->initCollection(mat_inits_y, coupling_inits_y, blockSize, yLine);
-  zUpdateRHSs = init->initCollection(mat_inits_z, coupling_inits_z, blockSize, zLine);
+  std::vector<AbstractMatrixInitializer*> mat_inits_x(blockSize*blockSize, & mat_init_x);
+  std::vector<AbstractMatrixInitializer*> mat_inits_y(blockSize*blockSize, & mat_init_y);
+  std::vector<AbstractMatrixInitializer*> mat_inits_z(blockSize*blockSize, & mat_init_z);
+  std::vector<AbstractCouplingInitializer*> coupling_inits_x(blockSize*blockSize, & coupling_init_x);
+  std::vector<AbstractCouplingInitializer*> coupling_inits_y(blockSize*blockSize, & coupling_init_y);
+  std::vector<AbstractCouplingInitializer*> coupling_inits_z(blockSize*blockSize, & coupling_init_z);
 
   guardB = allocateGuardStorage();
   guardE = allocateGuardStorage();
+
+  init->setOffsets(xLine, yLine, zLine);
+  initFields(init);
+
+  xUpdateRHSs = init->initCollection(mat_inits_x, coupling_inits_x, blockSize, xLine);
+  yUpdateRHSs = init->initCollection(mat_inits_y, coupling_inits_y, blockSize, yLine);
+  zUpdateRHSs = init->initCollection(mat_inits_z, coupling_inits_z, blockSize, zLine);
 
   guardSendbuf = new double[3*blockSize*blockSize];
 }
@@ -95,6 +97,39 @@ void Simulation3D::initFields(Simulation3DInitializer* init) {
     }
   }
 
+  for(unsigned int iy=0; iy < blockSize; iy++) {
+    for(unsigned int iz=0; iz < blockSize; iz++) {
+      init->populateGuard(& guardE[0][0][(blockSize*iy + iz)*3],
+			  & guardB[0][0][(blockSize*iy + iz)*3],
+			  -1, iy, iz);
+      init->populateGuard(& guardE[0][1][(blockSize*iy + iz)*3],
+			  & guardB[0][1][(blockSize*iy + iz)*3],
+			  blockSize, iy, iz);
+    }
+  }
+
+  for(unsigned int ix=0; ix < blockSize; ix++) {
+    for(unsigned int iz=0; iz < blockSize; iz++) {
+      init->populateGuard(& guardE[1][0][(blockSize*ix + iz)*3],
+			  & guardB[1][0][(blockSize*ix + iz)*3],
+			  ix, -1, iz);
+      init->populateGuard(& guardE[1][1][(blockSize*ix + iz)*3],
+			  & guardB[1][1][(blockSize*ix + iz)*3],
+			  ix, blockSize, iz);
+    }
+  }
+
+  for(unsigned int ix=0; ix < blockSize; ix++) {
+    for(unsigned int iy=0; iy < blockSize; iy++) {
+      init->populateGuard(& guardE[2][0][(blockSize*ix + iy)*3],
+			  & guardB[2][0][(blockSize*ix + iy)*3],
+			  ix, iy, -1);
+      init->populateGuard(& guardE[2][1][(blockSize*ix + iy)*3],
+			  & guardB[2][1][(blockSize*ix + iy)*3],
+			  ix, iy, blockSize);
+    }
+  }
+
   for(unsigned int i=0; i < blockSize*blockSize; i++) {
     rhs_ptrs_x[i] = & rhsx[blockSize*i];
     rhs_ptrs_y[i] = & rhsy[blockSize*i];
@@ -108,32 +143,46 @@ void Simulation3D::simulate(bool dump, unsigned int dump_periodicity, unsigned i
   gettimeofday(& t1, NULL);
 
   std::cout << std::setprecision(10);
-  for(unsigned int i=0; i <= nSteps; i++) {
-    if (i % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
+  for(currentStep=0; currentStep <= nSteps; currentStep++) {
+    if (currentStep % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
       std::ostringstream filename(std::ios::out);
-      filename << dumpDir << "/dump" << i / dump_periodicity << "dt" << 10.0/nSteps << "dx" << dx << ".h5";
+      filename << dumpDir << "/dump3D_" << currentStep / dump_periodicity << "dt" << 10.0/nSteps << "dx" << dx << ".h5";
       this->dumpFields(filename.str());
       n_dumps++;
     }
-    if (i % 1000 == 0 && world.rank() == 0) {
+    if (currentStep % 1000 == 0 && world.rank() == 0) {
       gettimeofday(& t2, NULL);
-      if(i > 0)
+      if(currentStep > 0)
 	std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
       t1=t2;
     }
-    this->timeStep();
+    if(currentStep < nSteps)
+      this->timeStep();
   }
 }
 
 void Simulation3D::dumpFields(std::string filename) {
+  unsigned int p_x = xLine.rank(), p_y = yLine.rank(), p_z = zLine.rank();
   hsize_t start[4];
   start[0] = xLine.rank()*blockSize; start[1] = yLine.rank()*blockSize;
   start[2] = zLine.rank()*blockSize; start[3] = 0;
+
+  hsize_t rhsx_start[3];
+  rhsx_start[0] = p_y*blockSize; rhsx_start[1] = p_z*blockSize; rhsx_start[2] = p_x*blockSize;
+  hsize_t rhsy_start[3];
+  rhsy_start[0] = p_x*blockSize; rhsy_start[1] = p_z*blockSize; rhsy_start[2] = p_y*blockSize;
+  hsize_t rhsz_start[3];
+  rhsz_start[0] = p_x*blockSize; rhsz_start[1] = p_y*blockSize; rhsz_start[2] = p_z*blockSize;
+  hsize_t rhs_count[3];
+  rhs_count[0] = blockSize; rhs_count[1] = blockSize; rhs_count[2] = blockSize;
+
   hsize_t count[4];
   count[0] = blockSize; count[1] = blockSize; count[2] = blockSize; count[3] = 3;
   
   hsize_t dims[4];
   dims[0] = blockSize*procsX; dims[1] = blockSize*procsY; dims[2] = blockSize*procsZ; dims[3] = 3;
+  hsize_t mem_dims[4];
+  mem_dims[0] = blockSize; mem_dims[1] = blockSize; mem_dims[2] = blockSize; mem_dims[3] = 3;
 
   hid_t fa_p_list = H5Pcreate(H5P_FILE_ACCESS);
   H5Pset_fapl_mpio(fa_p_list, world, MPI_INFO_NULL);
@@ -141,33 +190,83 @@ void Simulation3D::dumpFields(std::string filename) {
   hid_t file_id=H5Fcreate(filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, fa_p_list);
   H5Pclose(fa_p_list);
 
+  hsize_t rhs_dims[3];
+  rhs_dims[0] = blockSize*procsX; rhs_dims[1] = blockSize*procsY; rhs_dims[2] = blockSize*procsZ;
+  hsize_t rhs_mem_dims[3];
+  rhs_mem_dims[0] = blockSize; rhs_mem_dims[1] = blockSize; rhs_mem_dims[2] = blockSize;
+  
   hid_t E_filespace = H5Screate_simple(4, dims, NULL);
+  hid_t E_memspace = H5Screate_simple(4, mem_dims, NULL);
   hid_t B_filespace = H5Screate_simple(4, dims, NULL);
+  hid_t B_memspace = H5Screate_simple(4, mem_dims, NULL);
+  hid_t rhsx_filespace = H5Screate_simple(3, rhs_dims, NULL);
+  hid_t rhsx_memspace = H5Screate_simple(3, rhs_mem_dims, NULL);
+  hid_t rhsy_filespace = H5Screate_simple(3, rhs_dims, NULL);
+  hid_t rhsy_memspace = H5Screate_simple(3, rhs_mem_dims, NULL);
+  hid_t rhsz_filespace = H5Screate_simple(3, rhs_dims, NULL);
+  hid_t rhsz_memspace = H5Screate_simple(3, rhs_mem_dims, NULL);
+
   hid_t E_dset_id = H5Dcreate(file_id, "E", H5T_NATIVE_DOUBLE, E_filespace,
 			      H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t E_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
+  // H5Pset_dxpl_mpio(E_wr_p_list, H5FD_MPIO_COLLECTIVE);
+  H5Sselect_hyperslab(E_filespace, H5S_SELECT_SET, start, NULL, count, NULL);
+  herr_t status = H5Dwrite(E_dset_id, H5T_NATIVE_DOUBLE, E_memspace, E_filespace,
+			   E_wr_p_list, E);
+  H5Dclose(E_dset_id);
+  H5Sclose(E_filespace);
+  H5Sclose(E_memspace);
+  H5Pclose(E_wr_p_list);
+
   hid_t B_dset_id = H5Dcreate(file_id, "B", H5T_NATIVE_DOUBLE, B_filespace,
 			      H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-
-  hid_t E_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(E_wr_p_list, H5FD_MPIO_COLLECTIVE);
   hid_t B_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(B_wr_p_list, H5FD_MPIO_COLLECTIVE);
-
-  H5Sselect_hyperslab(E_filespace, H5S_SELECT_SET, start, NULL, count, NULL);
+  // H5Pset_dxpl_mpio(B_wr_p_list, H5FD_MPIO_COLLECTIVE);
   H5Sselect_hyperslab(B_filespace, H5S_SELECT_SET, start, NULL, count, NULL);
-
-  herr_t status = H5Dwrite(E_dset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-			   E_wr_p_list, E);
-  status = H5Dwrite(B_dset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
+  status = H5Dwrite(B_dset_id, H5T_NATIVE_DOUBLE, B_memspace, B_filespace,
 		    B_wr_p_list, B);
-
-  H5Dclose(E_dset_id);
   H5Dclose(B_dset_id);
-  H5Sclose(E_filespace);
   H5Sclose(B_filespace);
-  H5Pclose(E_wr_p_list);
+  H5Sclose(B_memspace);
   H5Pclose(B_wr_p_list);
-  H5Pclose(file_id);
+
+  hid_t rhsx_dset_id = H5Dcreate(file_id, "rhsx", H5T_NATIVE_DOUBLE, rhsx_filespace,
+				 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t rhsx_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
+  // H5Pset_dxpl_mpio(rhsx_wr_p_list, H5FD_MPIO_COLLECTIVE);
+  H5Sselect_hyperslab(rhsx_filespace, H5S_SELECT_SET, rhsx_start, NULL, rhs_count, NULL);
+  status = H5Dwrite(rhsx_dset_id, H5T_NATIVE_DOUBLE, rhsx_memspace, rhsx_filespace,
+		    rhsx_wr_p_list, rhsx);
+  H5Dclose(rhsx_dset_id);
+  H5Sclose(rhsx_filespace);
+  H5Sclose(rhsx_memspace);
+  H5Pclose(rhsx_wr_p_list);
+
+  hid_t rhsy_dset_id = H5Dcreate(file_id, "rhsy", H5T_NATIVE_DOUBLE, rhsy_filespace,
+				 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t rhsy_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
+  // H5Pset_dxpl_mpio(rhsy_wr_p_list, H5FD_MPIO_COLLECTIVE);
+  H5Sselect_hyperslab(rhsy_filespace, H5S_SELECT_SET, rhsy_start, NULL, rhs_count, NULL);
+  status = H5Dwrite(rhsy_dset_id, H5T_NATIVE_DOUBLE, rhsy_memspace, rhsy_filespace,
+		    rhsy_wr_p_list, rhsy);
+  H5Dclose(rhsy_dset_id);
+  H5Sclose(rhsy_filespace);
+  H5Sclose(rhsy_memspace);
+  H5Pclose(rhsy_wr_p_list);
+
+  hid_t rhsz_dset_id = H5Dcreate(file_id, "rhsz", H5T_NATIVE_DOUBLE, rhsz_filespace,
+				 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t rhsz_wr_p_list = H5Pcreate(H5P_DATASET_XFER);
+  // H5Pset_dxpl_mpio(rhsx_wr_p_list, H5FD_MPIO_COLLECTIVE);
+  H5Sselect_hyperslab(rhsz_filespace, H5S_SELECT_SET, rhsz_start, NULL, rhs_count, NULL);
+  status = H5Dwrite(rhsz_dset_id, H5T_NATIVE_DOUBLE, rhsz_memspace, rhsz_filespace,
+		    rhsz_wr_p_list, rhsz);
+  H5Dclose(rhsz_dset_id);
+  H5Sclose(rhsz_filespace);
+  H5Sclose(rhsz_memspace);
+  H5Pclose(rhsz_wr_p_list);
+
+  H5Fclose(file_id);
 }
 
 double*** Simulation3D::allocateGuardStorage() {
@@ -181,38 +280,71 @@ double*** Simulation3D::allocateGuardStorage() {
 }
 
 void Simulation3D::timeStep() {
+  std::ostringstream filename(std::ios::out);
   implicitUpdateM();
+  // filename << dumpDir << "/post_impM" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
   explicitUpdateP();
+  // filename << dumpDir << "/post_expP" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
   implicitUpdateP();
+  // filename << dumpDir << "/post_impP" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
   explicitUpdateM();
+  // filename << dumpDir << "/post_expM" << currentStep << ".h5";
+  // dumpFields(filename.str());
 }
 
 void Simulation3D::implicitUpdateM() {
+  std::ostringstream filename(std::ios::out);
+
   populateRHSM();
+
+  // filename << dumpDir << "/PreTD" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
 
   xUpdateRHSs->doLines(rhs_ptrs_x);
   yUpdateRHSs->doLines(rhs_ptrs_y);
   zUpdateRHSs->doLines(rhs_ptrs_z);
 
   writeRHSM();
-  getGuardB();
+
+  // filename << dumpDir << "/PostTD" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
+
+  getGuardF(B, guardB, UPWARDS);
   implicitMSubstituteB();
+  getGuardF(E, guardE, DOWNWARDS);
+
+  // filename << dumpDir << "/post_Subst.h5";
+  // dumpFields(filename.str());
 }
 
 void Simulation3D::implicitUpdateP() {
+  std::ostringstream filename(std::ios::out);
   populateRHSP();
+
+  // filename << dumpDir << "/PreTD" << currentStep << ".h5";
+  // dumpFields(filename.str());
+  // filename.str("");
 
   xUpdateRHSs->doLines(rhs_ptrs_x);
   yUpdateRHSs->doLines(rhs_ptrs_y);
   zUpdateRHSs->doLines(rhs_ptrs_z);
 
   writeRHSP();
-  getGuardB();
+  getGuardF(B, guardB, UPWARDS);
   implicitPSubstituteB();
+  getGuardF(E, guardE, DOWNWARDS);
 }
 
 void Simulation3D::explicitUpdateP() {
-  getGuardB();
+  getGuardF(B, guardB, UPWARDS);
   
   // update B
   double* guardEXH = guardE[0][1]; double* guardEYH = guardE[1][1]; double* guardEZH = guardE[2][1];
@@ -276,20 +408,15 @@ void Simulation3D::explicitUpdateP() {
 	  E[offset] += preFactorY*(tmp_field[offset + 2] - tmp_field[offset_ym1 + 2]);
 	else
 	  E[offset] += preFactorY*(tmp_field[offset + 2] - guardBYL[(blockSize*ix + iz)*3 + 2]);
-
-	if(ix + 1 == blockSize)
-	  guardEXH[(blockSize*iy + iz)*3 + 2] += preFactorX*(guardBXH[(blockSize*iy + iz)*3 + 1] - tmp_field[offset_xm1 + 1]);
-	if(iy + 1 == blockSize)
-	  guardEYH[(blockSize*ix + iz)*3] += preFactorY*(guardBYH[(blockSize*ix + iz)*3 + 2] - tmp_field[offset_ym1 + 2]);
-	if(iz + 1 == blockSize)
-	  guardEZH[(blockSize*ix + iz)*3 + 1] += preFactorZ*(guardBZH[(blockSize*ix + iz)*3] - tmp_field[offset_zm1]);
       }
     }
   }
+
+  getGuardF(E, guardE, DOWNWARDS);
 }
 
 void Simulation3D::explicitUpdateM() {
-  getGuardB();
+  getGuardF(B, guardB, UPWARDS);
   
   // update B
   double* guardEXH = guardE[0][1]; double* guardEYH = guardE[1][1]; double* guardEZH = guardE[2][1];
@@ -304,22 +431,23 @@ void Simulation3D::explicitUpdateM() {
 	for(unsigned int i=0; i < 3; i++) tmp_field[offset + i] = B[offset + i];
 
 	// B_x couples with d E_z / dy
-	if(iz + 1 < blockSize)
+	if(iy + 1 < blockSize)
 	  B[offset] -= preFactorY*(E[offset_yp1 + 2] - E[offset + 2]);
 	else
-	  B[offset] -= preFactorY*(guardEYH[(blockSize*ix + iy)*3 + 2] - E[offset + 2]);
+	  B[offset] -= preFactorY*(guardEYH[(blockSize*ix + iz)*3 + 2] - E[offset + 2]);
 
 	// B_y couples d E_x / dz
-	if(ix + 1 < blockSize)
+	if(iz + 1 < blockSize)
 	  B[offset + 1] -= preFactorZ*(E[offset_zp1] - E[offset]);
 	else
-	  B[offset + 1] -= preFactorZ*(guardEZH[(blockSize*iy + iz)*3] - E[offset]);
+	  B[offset + 1] -= preFactorZ*(guardEZH[(blockSize*ix + iy)*3] - E[offset]);
 
 	// B_z couples with d E_y / dx
-	if(iy + 1 < blockSize)
-	  B[offset + 2] += preFactorX*(E[offset_xp1 + 1] - E[offset + 1]);
-	else
-	  B[offset + 2] += preFactorX*(guardEXH[(blockSize*ix + iz)*3 + 1] - E[offset + 1]);
+	if(ix + 1 < blockSize)
+	  B[offset + 2] -= preFactorX*(E[offset_xp1 + 1] - E[offset + 1]);
+	else {
+	  B[offset + 2] -= preFactorX*(guardEXH[(blockSize*iy + iz)*3 + 1] - E[offset + 1]);
+	}
       }
     }
   }
@@ -340,30 +468,24 @@ void Simulation3D::explicitUpdateM() {
 	if(ix > 0)
 	  E[offset + 1] -= preFactorX*(tmp_field[offset + 2] - tmp_field[offset_xm1 + 2]);
 	else
-	  E[offset + 1] -= preFactorX*(tmp_field[offset] - guardBZL[(blockSize*ix + iy)*3]);
+	  E[offset + 1] -= preFactorX*(tmp_field[offset + 2] - guardBXL[(blockSize*iy + iz)*3 + 2]);
 
 	// d B_x / dy couples with E_z
 	if(iy > 0)
 	  E[offset + 2] -= preFactorY*(tmp_field[offset] - tmp_field[offset_ym1]);
 	else
-	  E[offset + 2] -= preFactorY*(tmp_field[offset] - guardBXL[(blockSize*iy + iz)*3]);
+	  E[offset + 2] -= preFactorY*(tmp_field[offset] - guardBYL[(blockSize*ix + iz)*3]);
 
 	// d B_y / dz couples with E_x
 	if(iz > 0)
 	  E[offset] -= preFactorZ*(tmp_field[offset + 1] - tmp_field[offset_zm1 + 1]);
 	else
-	  E[offset] -= preFactorZ*(tmp_field[offset + 1] - guardBYL[(blockSize*ix + iz)*3 + 1]);
-
-	if(ix + 1 == blockSize)
-	  guardEXH[(blockSize*iy + iz)*3 + 1] -= preFactorX*(guardBXH[(blockSize*iy + iz)*3 + 2] - tmp_field[offset_xm1 + 2]);
-	if(iy + 1 == blockSize)
-	  guardEYH[(blockSize*ix + iz)*3 + 2] += preFactorY*(guardBYH[(blockSize*ix + iz)*3] - tmp_field[offset_ym1]);
-	if(iz + 1 == blockSize)
-	  guardEYH[(blockSize*ix + iz)*3] -= preFactorZ*(guardBZH[(blockSize*ix + iz)*3 + 1] - tmp_field[offset_zm1 + 1]);
-
+	  E[offset] -= preFactorZ*(tmp_field[offset + 1] - guardBZL[(blockSize*ix + iy)*3 + 1]);
       }
     }
   }
+
+  getGuardF(E, guardE, DOWNWARDS);
 }
 
 
@@ -374,6 +496,7 @@ void Simulation3D::implicitPSubstituteB() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int guard_offsetB = (blockSize*iy + iz)*3 + 1;
       unsigned int guard_offsetE = (blockSize*iy + iz)*3 + 2;
+      // E_z coupled with d B_y / dx
       for(unsigned int ix=0; ix < blockSize; ix++) {
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3 + 1;
 	unsigned int B_offset = (((ix-1)*blockSize + iy)*blockSize + iz)*3 + 1;
@@ -382,8 +505,6 @@ void Simulation3D::implicitPSubstituteB() {
 	  E[E_offset] += preFactorX*(B[B_offset2] - B[B_offset]);
 	else
 	  E[E_offset] += preFactorX*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] += preFactorX*(guardBH[guard_offsetB] - B[B_offset2]);
       }
     }
   }
@@ -393,6 +514,7 @@ void Simulation3D::implicitPSubstituteB() {
     for(unsigned int iy=0; iy < blockSize; iy++) {
       unsigned int guard_offsetB = (blockSize*ix + iy)*3;
       unsigned int guard_offsetE = (blockSize*ix + iy)*3 + 1;
+      // E_y coupled with d B_x / dz
       for(unsigned int iz=0; iz < blockSize; iz++) {
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3;
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + (iz-1))*3;
@@ -401,8 +523,6 @@ void Simulation3D::implicitPSubstituteB() {
 	  E[E_offset] += preFactorZ*(B[B_offset2] - B[B_offset]);
 	else
 	  E[E_offset] += preFactorZ*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] += preFactorZ*(guardBH[guard_offsetB] - B[B_offset2]);
       }
     }
   }
@@ -412,17 +532,15 @@ void Simulation3D::implicitPSubstituteB() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int guard_offsetB = (blockSize*ix + iz)*3 + 2;
       unsigned int guard_offsetE = (blockSize*ix + iz)*3;
+      // E_x coupled with d B_z / dy
       for(unsigned int iy=0; iy < blockSize; iy++) {
 	unsigned int B_offset = ((ix*blockSize + (iy-1))*blockSize + iz)*3 + 2;
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3 + 2;
 	unsigned int E_offset = ((ix*blockSize + iy)*blockSize + iz)*3;
-	unsigned int E_offset2 = ((ix*blockSize + (iy+1))*blockSize + iz)*3;
 	if(iy > 0)
 	  E[E_offset] += preFactorY*(B[B_offset2] - B[B_offset]);
 	else
 	  E[E_offset] += preFactorY*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] += preFactorY*(guardBH[guard_offsetB] - B[B_offset2]);
       }
     }
   }
@@ -435,16 +553,16 @@ void Simulation3D::implicitMSubstituteB() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int guard_offsetB = (blockSize*iy + iz)*3 + 2;
       unsigned int guard_offsetE = (blockSize*iy + iz)*3 + 1;
+      // E_y coupled with d B_z / dx
       for(unsigned int ix=0; ix < blockSize; ix++) {
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3 + 2;
 	unsigned int B_offset = (((ix-1)*blockSize + iy)*blockSize + iz)*3 + 2;
 	unsigned int E_offset = (((ix)*blockSize + iy)*blockSize + iz)*3 + 1;
 	if(ix > 0)
 	  E[E_offset] -= preFactorX*(B[B_offset2] - B[B_offset]);
-	else
+	else {
 	  E[E_offset] -= preFactorX*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] -= preFactorX*(guardBH[guard_offsetB] - B[B_offset2]);
+	}
       }
     }
   }
@@ -454,6 +572,7 @@ void Simulation3D::implicitMSubstituteB() {
     for(unsigned int iy=0; iy < blockSize; iy++) {
       unsigned int guard_offsetB = (blockSize*ix + iy)*3 + 1;
       unsigned int guard_offsetE = (blockSize*ix + iy)*3;
+      // E_x coupled with d B_y / dz
       for(unsigned int iz=0; iz < blockSize; iz++) {
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3 + 1;
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + (iz-1))*3 + 1;
@@ -462,8 +581,6 @@ void Simulation3D::implicitMSubstituteB() {
 	  E[E_offset] -= preFactorZ*(B[B_offset2] - B[B_offset]);
 	else
 	  E[E_offset] -= preFactorZ*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] -= preFactorZ*(guardBH[guard_offsetB] - B[B_offset2]);
       }
     }
   }
@@ -471,8 +588,9 @@ void Simulation3D::implicitMSubstituteB() {
   guardBL = guardB[1][0]; guardBH = guardB[1][1]; guardEH = guardE[1][1];
   for(unsigned int ix=0; ix < blockSize; ix++) {
     for(unsigned int iz=0; iz < blockSize; iz++) {
-      unsigned int guard_offsetB = (blockSize*ix + iz)*3 + 2;
-      unsigned int guard_offsetE = (blockSize*ix + iz)*3;
+      unsigned int guard_offsetB = (blockSize*ix + iz)*3;
+      unsigned int guard_offsetE = (blockSize*ix + iz)*3 + 2;
+      // E_z coupled with d B_x / dy
       for(unsigned int iy=0; iy < blockSize; iy++) {
 	unsigned int B_offset = ((ix*blockSize + (iy-1))*blockSize + iz)*3;
 	unsigned int B_offset2 = ((ix*blockSize + iy)*blockSize + iz)*3;
@@ -481,8 +599,6 @@ void Simulation3D::implicitMSubstituteB() {
 	  E[E_offset] -= preFactorY*(B[B_offset2] - B[B_offset]);
 	else
 	  E[E_offset] -= preFactorY*(B[B_offset2] - guardBL[guard_offsetB]);
-	if(ix + 1 == blockSize)
-	  guardEH[guard_offsetE] -= preFactorY*(guardBH[guard_offsetB] - B[B_offset2]);
       }
     }
   }
@@ -495,14 +611,16 @@ void Simulation3D::populateRHSM() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*blockSize*iy + blockSize*iz;
       unsigned int guard_offset = (blockSize*iy + iz)*3 + 1;
+      // B_z coupled with d E_y / dx
       for(unsigned int ix=0; ix < blockSize; ix++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 2;
 	unsigned int E_offset = (((ix)*blockSize + iy)*blockSize + iz)*3 + 1;
 	unsigned int E_offset2 = (((ix+1)*blockSize + iy)*blockSize + iz)*3 + 1;
 	if(ix+1 < blockSize)
 	  rhsx[rhs_offset + ix] = B[B_offset] - preFactorX*(E[E_offset2]-E[E_offset]);
-	else
+	else {
 	  rhsx[rhs_offset + ix] = B[B_offset] - preFactorX*(guardEH[guard_offset]-E[E_offset]);
+	}
       }
     }
   }
@@ -512,6 +630,7 @@ void Simulation3D::populateRHSM() {
     for(unsigned int iy=0; iy < blockSize; iy++) {
       unsigned int rhs_offset = blockSize*(blockSize*ix + iy);
       unsigned int guard_offset = (blockSize*ix + iy)*3;
+      // B_y coupled with d E_x / dz
       for(unsigned int iz=0; iz < blockSize; iz++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 1;
 	unsigned int E_offset = ((ix*blockSize + iy)*blockSize + iz)*3;
@@ -529,6 +648,7 @@ void Simulation3D::populateRHSM() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*(blockSize*ix + iz);
       unsigned int guard_offset = (blockSize*ix + iz)*3 + 2;
+      // B_x coupled with d E_z / dy
       for(unsigned int iy=0; iy < blockSize; iy++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3;
 	unsigned int E_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 2;
@@ -548,6 +668,7 @@ void Simulation3D::populateRHSP() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*blockSize*iy + blockSize*iz;
       unsigned int guard_offset = (blockSize*iy + iz)*3 + 2;
+      // B_y coupled with d E_z / dx
       for(unsigned int ix=0; ix < blockSize; ix++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 1;
 	unsigned int E_offset = (((ix)*blockSize + iy)*blockSize + iz)*3 + 2;
@@ -565,6 +686,7 @@ void Simulation3D::populateRHSP() {
     for(unsigned int iy=0; iy < blockSize; iy++) {
       unsigned int rhs_offset = blockSize*(blockSize*ix + iy);
       unsigned int guard_offset = (blockSize*ix + iy)*3 + 1;
+      // B_x coupled with d E_y / dz
       for(unsigned int iz=0; iz < blockSize; iz++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3;
 	unsigned int E_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 1;
@@ -582,20 +704,22 @@ void Simulation3D::populateRHSP() {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*(blockSize*ix + iz);
       unsigned int guard_offset = (blockSize*ix + iz)*3;
+      // B_z coupled with d E_x / dy
       for(unsigned int iy=0; iy < blockSize; iy++) {
 	unsigned int B_offset = ((ix*blockSize + iy)*blockSize + iz)*3 + 2;
 	unsigned int E_offset = ((ix*blockSize + iy)*blockSize + iz)*3;
 	unsigned int E_offset2 = ((ix*blockSize + (iy+1))*blockSize + iz)*3;
 	if(iy+1 < blockSize)
 	  rhsy[rhs_offset + iy] = B[B_offset] + preFactorY*(E[E_offset2]-E[E_offset]);
-	else
-	  rhsy[rhs_offset + iy] = B[B_offset] + preFactorY*(guardEH[guard_offset]-E[E_offset]);	  
+	else {
+	  rhsy[rhs_offset + iy] = B[B_offset] + preFactorY*(guardEH[guard_offset]-E[E_offset]);
+	}
       }
     }
   }
 }
 
-void Simulation3D::writeRHSP() { // FIXME !!!! once things compile
+void Simulation3D::writeRHSP() {
   for(unsigned int iy=0; iy < blockSize; iy++) {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*blockSize*iy + blockSize*iz;
@@ -627,7 +751,7 @@ void Simulation3D::writeRHSP() { // FIXME !!!! once things compile
   }
 }
 
-void Simulation3D::writeRHSM() { // FIXME !!!! once things compile
+void Simulation3D::writeRHSM() {
   for(unsigned int iy=0; iy < blockSize; iy++) {
     for(unsigned int iz=0; iz < blockSize; iz++) {
       unsigned int rhs_offset = blockSize*blockSize*iy + blockSize*iz;
@@ -659,112 +783,149 @@ void Simulation3D::writeRHSM() { // FIXME !!!! once things compile
   }
 }
 
+// FIXME - THIS IS A VERY NAUGHTY FUNCTION.  YOU SHOULD BE ASHAMED
+void Simulation3D::getGuardF(double* F, double*** guardF, commDir dir) {
+  int p = xLine.rank();
+  int n_p = xLine.size();
 
-void Simulation3D::getGuardB() {
-  unsigned int p = xLine.rank();
-  unsigned int n_p = xLine.size();
+  unsigned int i_send = dir == UPWARDS ? blockSize - 1 : 0;
+  int p_shift = dir == UPWARDS ? 1 : -1;
+  double* guardDest = dir == UPWARDS ? guardF[0][0] : guardF[0][1];
+  bool up = dir == UPWARDS;
+  bool partner_up = ((p + p_shift >= 0) && !up) || ((p + p_shift < n_p) && up);
+  bool partner_down = ((p - p_shift >= 0) && up) || ((p - p_shift < n_p) && !up);
 
-  // even ranks exchange upwards
-  unsigned int i_send = p % 2 == 0 ? blockSize - 1 : 0;
-  double* guardDest = p % 2 == 0 ? guardB[0][0] : guardB[0][1];
+  fillSendbufX(i_send, F);
+  if(p % 2 == 0) {
+    if(partner_up)
+      xLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
 
-  fillSendbufX(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);
+    if(partner_down)
+      xLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufX(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
+  }
+  else {
+    if(partner_down)
+      xLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufX(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
 
-  // even ranks exchange downwards
-  i_send = p % 2 == 0 ? 0 : blockSize - 1;
-  guardDest = p % 2 == 0 ? guardB[0][1] : guardB[0][0];
-
-  fillSendbufX(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);
-
+    if(partner_up)
+      xLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
+  }
+ 
   p = yLine.rank();
   n_p = yLine.size();
+  i_send = dir == UPWARDS ? blockSize - 1 : 0;
+  partner_up = ((p + p_shift >= 0) && !up) || ((p + p_shift < n_p) && up);
+  partner_down = ((p - p_shift >= 0) && up) || ((p - p_shift < n_p) && !up);
+  guardDest = dir == UPWARDS ? guardF[1][0] : guardF[1][1];
 
-  // even ranks exchange upwards
-  i_send = p % 2 == 0 ? blockSize - 1 : 0;
-  guardDest = p % 2 == 0 ? guardB[0][0] : guardB[0][1];
+  fillSendbufY(i_send, F);
+  if(p % 2 == 0) {
+    if(partner_up)
+      yLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
 
-  fillSendbufY(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);
+    if(partner_down)
+      yLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufY(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
+  }
+  else {
+    if(partner_down) {
+      yLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    }
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufY(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
 
-  // even ranks exchange downwards
-  i_send = p % 2 == 0 ? 0 : blockSize - 1;
-  guardDest = p % 2 == 0 ? guardB[0][1] : guardB[0][0];
-
-  fillSendbufY(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);
+    if(partner_up)
+      yLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
+  }
 
   p = zLine.rank();
   n_p = zLine.size();
+  i_send = dir == UPWARDS ? blockSize - 1 : 0;
+  partner_up = ((p + p_shift >= 0) && !up) || ((p + p_shift < n_p) && up);
+  partner_down = ((p - p_shift >= 0) && up) || ((p - p_shift < n_p) && !up);
+  guardDest = dir == UPWARDS ? guardF[2][0] : guardF[2][1];
 
-  // even ranks exchange upwards
-  i_send = p % 2 == 0 ? blockSize - 1 : 0;
-  guardDest = p % 2 == 0 ? guardB[0][0] : guardB[0][1];
+  fillSendbufZ(i_send, F);
+  if(p % 2 == 0) {
+    if(partner_up)
+      zLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
 
-  fillSendbufZ(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);
+    if(partner_down)
+      zLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufZ(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
+  }
+  else {
+    if(partner_down)
+      zLine.recv(p - p_shift, 0, guardDest, 3*blockSize*blockSize);
+    else if (F == B) {
+      i_send = i_send == 0 ? blockSize - 1 : 0;
+      fillSendbufZ(i_send, F);
+      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardDest);
+    }
+    else
+      std::fill_n(guardDest, 3*blockSize*blockSize, 0);
 
-  // even ranks exchange downwards
-  i_send = p % 2 == 0 ? 0 : blockSize - 1;
-  guardDest = p % 2 == 0 ? guardB[0][1] : guardB[0][0];
-
-  fillSendbufZ(i_send);
-  exchangeData(guardDest, guardSendbuf, xLine, UPWARDS);
-  exchangeData(guardDest, guardSendbuf, xLine, DOWNWARDS);  
+    if(partner_up)
+      zLine.send(p + p_shift, 0, guardSendbuf, 3*blockSize*blockSize);
+  }
 }
 
-void Simulation3D::fillSendbufX(unsigned int ix) {
+void Simulation3D::fillSendbufX(unsigned int ix, double* F) {
   for(unsigned int iy = 0; iy < blockSize; iy++) {   // Copy x-face into sendbuf
     for(unsigned int iz = 0; iz < blockSize; iz++) {
-      for(unsigned int i = 0; i < 3; i++)
-	guardSendbuf[(blockSize*iy + iz)*3 + i] = B[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
+      for(unsigned int i = 0; i < 3; i++) {
+	guardSendbuf[(blockSize*iy + iz)*3 + i] = F[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
+      }
     }
   }
 }
 
-void Simulation3D::fillSendbufY(unsigned int iy) {
-  for(unsigned int ix = 0; iy < blockSize; ix++) {   // Copy y-face into sendbuf
+void Simulation3D::fillSendbufY(unsigned int iy, double* F) {
+  for(unsigned int ix = 0; ix < blockSize; ix++) {   // Copy y-face into sendbuf
     for(unsigned int iz = 0; iz < blockSize; iz++) {
       for(unsigned int i = 0; i < 3; i++)
-	guardSendbuf[(blockSize*ix + iz)*3 + i] = B[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
+	guardSendbuf[(blockSize*ix + iz)*3 + i] = F[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
     }
   }
 }
 
-void Simulation3D::fillSendbufZ(unsigned int iz) {
+void Simulation3D::fillSendbufZ(unsigned int iz, double* F) {
   for(unsigned int ix = 0; ix < blockSize; ix++) {   // Copy z-face into sendbuf
     for(unsigned int iy = 0; iy < blockSize; iy++) {
       for(unsigned int i = 0; i < 3; i++)
-	guardSendbuf[(blockSize*ix + iz)*3 + i] = B[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
+	guardSendbuf[(blockSize*ix + iy)*3 + i] = F[(blockSize*(blockSize*ix + iy) + iz)*3 + i];
     }
-  }
-}
-
-void Simulation3D::exchangeData(double* guardStorage, double* sendbuf,
-				mpi::communicator& world, commDir d) {
-  switch(d) {
-  case UPWARDS:
-    if (world.rank() + 1 == world.size()) { // if no partner, symmetry BCs on B
-      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardStorage);
-      return;
-    }
-    world.send(world.rank() + 1, 0, sendbuf, 3*blockSize*blockSize);
-    world.recv(world.rank() + 1, 0, guardStorage, 3*blockSize*blockSize);
-    break;
-  case DOWNWARDS:
-    if (world.rank() == 0) { // if no partner, symmetry BCs on B
-      std::copy(guardSendbuf, guardSendbuf + 3*blockSize*blockSize, guardStorage);
-      return;
-    }
-    world.recv(world.rank() - 1, 0, guardStorage, 3*blockSize*blockSize);
-    world.send(world.rank() - 1, 0, sendbuf, 3*blockSize*blockSize);
-    break;
   }
 }
 
