@@ -176,4 +176,13 @@ accuracy-check: accuracy_check.cpp ${HEADERS} ${SRC_FILES}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} accuracy_check.cpp ${SRC_FILES} ${LIBS}
 
 cube-collective: cube_collective.cpp ${HEADERS_3D} ${SRC_FILES_3D}
-	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} cube_collective.cpp ${SRC_FILES_3D} ${LIBS_3D}
+	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-collective-dump: cube_collective_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-three-scatter: cube_three_scatter.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-three-scatter-dump: cube_three_scatter_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
