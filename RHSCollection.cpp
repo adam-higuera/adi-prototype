@@ -118,7 +118,7 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
 						 unsigned int block_size,
 						 mpi::communicator& world)
   :  AbstractRHSCollection(mat_inits, coupling_inits, block_size, world),
-     sendbuf(new double[2*(block_size / world.size() + 1)]) {
+     sendbuf(new double[2*(nLines / world.size() + 1)]) {
   if(world.size()==1)
     return;
   numLocalSolves = nLines / world.size() + (world.rank() < nLines % world.size());
@@ -134,7 +134,7 @@ ChunkedRHSCollection::ChunkedRHSCollection(std::vector<AbstractMatrixInitializer
 void ChunkedRHSCollection::doLines(double** theLines) {
 #ifndef TOTAL_REDUCED_ONLY
 #ifndef NO_LOCAL_SOLVES
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     solvers[il]->solve(theLines[il]);
     if(world.size() != 1) {
       redRHSs[il]->getLocalPart()[0] = theLines[il][0];
@@ -153,7 +153,7 @@ void ChunkedRHSCollection::doLines(double** theLines) {
 
 #ifndef TOTAL_REDUCED_ONLY
 #ifndef COMMUNICATION_ONLY
-  for(unsigned int il=0; il < blockSize; il++) {
+  for(unsigned int il=0; il < nLines; il++) {
     couplings[il]->applyCoupling(theLines[il], redRHSs[il]);
   }
 #endif
@@ -184,7 +184,8 @@ void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& re
   }
 
 #ifndef NO_REDUCED_SOLVE
-  for(unsigned int il=0; il < blockSize; il++) {
+
+  for(unsigned int il=0; il < nLines; il++) {
     red_rhss[il]->copyValues(recvbuf, il / world.size(), numLocalSolves);
     red_rhss[il]->solve();
     red_rhss[il]->writeValues(recvbuf, il / world.size(), numLocalSolves);
@@ -192,7 +193,7 @@ void ChunkedRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*>& re
 #endif
 
   for(unsigned int ip=0; ip < world.size(); ip++) {
-    unsigned int n_l_ip = nLines / world.size() + (ip < blockSize % world.size());
+    unsigned int n_l_ip = nLines / world.size() + (ip < nLines % world.size());
     if(n_l_ip == 0)
       break;
 
@@ -600,3 +601,9 @@ void ThreeScatterRHSCollection::doReducedSystems(std::vector<AbstractReducedRHS*
     std::memcpy(red_rhss[il]->getLocalPart(), sendbuf + 2*il, 2*sizeof(double));
   }
 }
+
+std::string CollectiveRHSCollection::getAlgName() {return std::string("Collective");}
+std::string NonBlockingRHSCollection::getAlgName() {return std::string("NonBlocking");}
+std::string ChunkedRHSCollection::getAlgName() {return std::string("Distributed");}
+std::string DelegatedRHSCollection::getAlgName() {return std::string("Delegated");}
+std::string ThreeScatterRHSCollection::getAlgName() {return std::string("Three-scatter");}

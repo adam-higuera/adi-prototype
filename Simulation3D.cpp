@@ -2,7 +2,6 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
-#include "hdf5.h"
 #include <boost/timer.hpp>
 #include <sys/time.h>
 #include "Simulation3D.hpp"
@@ -142,6 +141,9 @@ void Simulation3D::simulate(bool dump, unsigned int dump_periodicity, unsigned i
   timeval t1, t2;
   gettimeofday(& t1, NULL);
 
+  unsigned int steps_per_timing = 100;
+  unsigned long* timings = new unsigned long[nSteps / steps_per_timing];
+
   std::cout << std::setprecision(10);
   for(currentStep=0; currentStep <= nSteps; currentStep++) {
     if (currentStep % dump_periodicity == 0 && n_dumps < total_dumps && dump) {
@@ -150,15 +152,75 @@ void Simulation3D::simulate(bool dump, unsigned int dump_periodicity, unsigned i
       this->dumpFields(filename.str());
       n_dumps++;
     }
-    if (currentStep % 1000 == 0 && world.rank() == 0) {
+    if (currentStep % steps_per_timing == 0 && world.rank() == 0) {
       gettimeofday(& t2, NULL);
       if(currentStep > 0)
-	std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
+	timings[currentStep / steps_per_timing - 1] =
+	  1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec);
+	// std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
       t1=t2;
     }
     if(currentStep < nSteps)
       this->timeStep();
   }
+
+  if(world.rank() == 0)
+    dumpTimings(timings, nSteps / steps_per_timing, steps_per_timing);
+}
+
+void Simulation3D::dumpTimings(unsigned long* timings, hsize_t total_timings,
+			       unsigned int steps_per_timing) {
+  std::ostringstream filename(std::ios::out);
+  filename << dumpDir << "/timing_s" << blockSize << "_p" << world.size() << ".h5";
+  
+  hid_t file_id=H5Fcreate(filename.str().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+  hid_t timingspace=H5Screate_simple(1, & total_timings, NULL);
+  hid_t dx_space = H5Screate(H5S_SCALAR);
+  hid_t dt_space = H5Screate(H5S_SCALAR);
+  hid_t bs_space = H5Screate(H5S_SCALAR);
+  hid_t ns_space = H5Screate(H5S_SCALAR);
+  hid_t alg_name_space = H5Screate(H5S_SCALAR);
+  hid_t atype = H5Tcopy(H5T_C_S1);
+#ifndef YEE
+  H5Tset_size(atype, xUpdateRHSs->getAlgName().length());
+#else
+  H5Tset_size(atype, std::string("Yee").length());
+#endif
+  H5Tset_strpad(atype, H5T_STR_NULLTERM);
+
+  hid_t timing_dset_id = H5Dcreate(file_id, "timings", H5T_NATIVE_LONG, timingspace,
+				   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t dx_attr_id = H5Acreate(timing_dset_id, "dx", H5T_NATIVE_DOUBLE, dx_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+  hid_t dt_attr_id = H5Acreate(timing_dset_id, "dt", H5T_NATIVE_DOUBLE, dt_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+  hid_t bs_attr_id = H5Acreate(timing_dset_id, "blockSize", H5T_NATIVE_UINT, bs_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+  hid_t ns_attr_id = H5Acreate(timing_dset_id, "stepsPerTiming", H5T_NATIVE_UINT, ns_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+  hid_t alg_attr_id = H5Acreate(timing_dset_id,"communicationStrategy", atype, alg_name_space,
+				H5P_DEFAULT, H5P_DEFAULT);
+
+  herr_t status = H5Dwrite(timing_dset_id, H5T_NATIVE_LONG, H5S_ALL, H5S_ALL,
+			   H5P_DEFAULT, timings);
+  status = H5Awrite(dx_attr_id, H5T_NATIVE_DOUBLE, & dx);
+  status = H5Awrite(dt_attr_id, H5T_NATIVE_DOUBLE, & dt);
+  status = H5Awrite(bs_attr_id, H5T_NATIVE_UINT, & blockSize);
+  status = H5Awrite(ns_attr_id, H5T_NATIVE_UINT, & steps_per_timing);
+#ifndef YEE
+  status = H5Awrite(alg_attr_id, atype, xUpdateRHSs->getAlgName().c_str());
+#else
+  status H5Awrite(alg_attr_id, atype, "Yee");
+#endif
+
+  H5Sclose(timingspace); H5Sclose(dx_space); H5Sclose(dt_space);
+  H5Sclose(alg_name_space); H5Sclose(bs_space); H5Sclose(ns_space);
+  H5Tclose(atype);
+  H5Aclose(dx_attr_id); H5Aclose(dt_attr_id); H5Aclose(bs_attr_id);
+  H5Aclose(alg_attr_id); H5Aclose(ns_attr_id);
+  H5Dclose(timing_dset_id);
+  H5Fclose(file_id);
 }
 
 void Simulation3D::dumpFields(std::string filename) {
@@ -281,6 +343,7 @@ double*** Simulation3D::allocateGuardStorage() {
 
 void Simulation3D::timeStep() {
   std::ostringstream filename(std::ios::out);
+#ifndef YEE
   implicitUpdateM();
   // filename << dumpDir << "/post_impM" << currentStep << ".h5";
   // dumpFields(filename.str());
@@ -296,6 +359,9 @@ void Simulation3D::timeStep() {
   explicitUpdateM();
   // filename << dumpDir << "/post_expM" << currentStep << ".h5";
   // dumpFields(filename.str());
+#else
+  yeeUpdate();
+#endif
 }
 
 void Simulation3D::implicitUpdateM() {
@@ -942,4 +1008,69 @@ void Simulation3DInitializer::setOffsets(const mpi::communicator & xLine,
   x_offset=(dx*blockSize*xLine.rank());
   y_offset=(dy*blockSize*yLine.rank());
   z_offset=(dz*blockSize*zLine.rank());
+}
+
+void Simulation3D::yeeUpdate() {
+  // update B
+  double* guardEXH = guardE[0][1]; double* guardEYH = guardE[1][1]; double* guardEZH = guardE[2][1];
+  for(unsigned int ix=0; ix < blockSize; ix++) {
+    for(unsigned int iy = 0; iy < blockSize; iy++) {
+      for(unsigned int iz = 0; iz < blockSize; iz++) {
+	unsigned int offset = ((ix*blockSize + iy)*blockSize + iz)*3;
+	unsigned int offset_xp1 = (((ix+1)*blockSize + iy)*blockSize + iz)*3;
+	unsigned int offset_yp1 = ((ix*blockSize + (iy+1))*blockSize + iz)*3;
+	unsigned int offset_zp1 = ((ix*blockSize + iy)*blockSize + (iz+1))*3;
+
+	double E_x = E[offset]; double E_y = E[offset + 1]; double E_z = E[offset + 2];
+	// B_x couples with dE_y / dz - d E_z / dy
+	double E_z_yp1 = iy + 1 < blockSize ? E[offset_yp1 + 2] : guardEYH[(blockSize*ix + iz)*3 + 2];
+	double E_y_zp1 = iz + 1 < blockSize ? E[offset_zp1 + 1] : guardEZH[(blockSize*ix + iy)*3 + 1];
+	B[offset] += preFactorZ*(E_y_zp1 - E_y) - preFactorY*(E_z_yp1 - E_z);
+
+	// B_y couples d E_z / dx - d E_x / dz
+	double E_z_xp1 = ix + 1 < blockSize ? E[offset_xp1 + 2] : guardEXH[(blockSize*iy + iz)*3 + 2];
+	double E_x_zp1 = iz + 1 < blockSize ? E[offset_zp1] : guardEZH[(blockSize*ix + iy)*3];
+	B[offset + 1] += preFactorX*(E_z_xp1 - E_z) - preFactorZ*(E_x_zp1 - E_x);
+
+	// B_z couples with d E_x / dy - d E_y / dx
+	double E_x_yp1 = iy + 1 < blockSize ? E[offset_yp1] : guardEYH[(blockSize*ix + iz)*3];
+	double E_y_xp1 = ix + 1 < blockSize ? E[offset_xp1 + 1] : guardEXH[(blockSize*iy + iz)*3 + 1];
+	B[offset + 2] += preFactorY*(E_x_yp1 - E_x) - preFactorX*(E_y_xp1 - E_y);
+      }
+    }
+  }
+  // Share B
+  getGuardF(B, guardB, UPWARDS);
+  
+  // update E
+  double* guardBXL = guardB[0][0]; double* guardBYL = guardB[1][0]; double* guardBZL = guardB[2][0];
+  double* guardBXH = guardB[0][1]; double* guardBYH = guardB[1][1]; double* guardBZH = guardB[2][1];
+  for(unsigned int ix=0; ix < blockSize; ix++) {
+    for(unsigned int iy = 0; iy < blockSize; iy++) {
+      for(unsigned int iz = 0; iz < blockSize; iz++) {
+	unsigned int offset = ((ix*blockSize + iy)*blockSize + iz)*3;
+	unsigned int offset_xm1 = (((ix-1)*blockSize + iy)*blockSize + iz)*3;
+	unsigned int offset_ym1 = ((ix*blockSize + (iy-1))*blockSize + iz)*3;
+	unsigned int offset_zm1 = ((ix*blockSize + iy)*blockSize + (iz-1))*3;
+
+	double B_x = B[offset]; double B_y = B[offset + 1]; double B_z = B[offset + 2];
+	// d B_x / dz - d B_z / dx couples with E_y
+	double B_z_xm1 = ix > 0 ? B[offset_xm1 + 2] : guardBXL[(blockSize*iy + iz)*3 + 2];
+	double B_x_zm1 = iz > 0 ? B[offset_zm1] : guardBZL[(blockSize*ix + iy)*3];
+	E[offset + 1] += preFactorZ*(B_x - B_x_zm1) - preFactorX*(B_z - B_z_xm1);
+
+	// d B_y / d_x - d B_x / dy couples with E_z
+	double B_x_ym1 = iy > 0 ? B[offset_ym1] : guardBYL[(blockSize*ix + iz)*3];
+	double B_y_xm1 = ix > 0 ? B[offset_xm1 + 1] : guardBXL[(blockSize*iy + iz)*3 + 1];
+	E[offset + 2] += preFactorX*(B_y - B_y_xm1) - preFactorY*(B_x - B_x_ym1);
+
+	// d B_z / dy - d B_y / dz couples with E_x
+	double B_y_zm1 = iz > 0 ? B[offset_zm1 + 1] : guardBZL[(blockSize*ix + iy)*3 + 1];
+	double B_z_ym1 = iy > 0 ? B[offset_ym1 + 2] : guardBYL[(blockSize*ix + iz)*3 + 2];
+	E[offset] += preFactorY*(B_z - B_z_ym1) - preFactorZ*(B_y - B_y_zm1);
+      }
+    }
+  }
+  // Share E
+  getGuardF(E, guardE, DOWNWARDS);
 }

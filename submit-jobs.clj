@@ -23,7 +23,7 @@
 
 (defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name dims time-steps wall-time]
   (let [exec-name (re-find #"[^/]*$" executable)]
-    (clojure.java.shell/sh "echo"
+    (clojure.java.shell/sh "qsub"
                            (str "-l walltime=0:" wall-time ":0")
                            (get-resource-list edge-procs procs-per-node dims)
                            (str "-vDOMAIN_SIZE=" domain-size ",PROCS_PER_EDGE=" edge-procs
@@ -33,7 +33,6 @@
                            (str "-N" executable domain-size "_" edge-procs)
                            (str "-q" q)
                            (str "-e" results-directory "/" exec-name "err_size" domain-size "procs" edge-procs)
-                           (str "-A UCB00000059")
                            script-name)))
 
 ; ./submit-jobs.clj -s [40] -p [10 20 30 40 50] -e emsquare2d-one-line -n 12 -q janus-short -d /lustre/adhi1756/comm_only

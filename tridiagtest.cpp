@@ -1,4 +1,4 @@
-include "RHSCollection.hpp"
+#include "RHSCollection.hpp"
 #include <fstream>
 #include <iomanip>
 
@@ -16,7 +16,7 @@ int main (int argc, char* argv []) {
   std::vector<AbstractCouplingInitializer*> c_inits(81, & c_init);
 
   std::cout << "Entering constructor" << world.rank() << std::endl;
-  CollectiveRHSCollection crc(mat_inits, c_inits, 9, world);
+  ChunkedRHSCollection crc(mat_inits, c_inits, 9, world);
   std::cout << "Exiting constructor" << world.rank() << std::endl;
 
   double test_rhs_storage[81*9];

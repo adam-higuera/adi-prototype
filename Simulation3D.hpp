@@ -2,6 +2,7 @@
 #define SIMULATION_3D_H
 
 #include "RHSCollection.hpp"
+#include "hdf5.h"
 #include <iostream>
 
 class Simulation3DInitializer {
@@ -109,12 +110,13 @@ public:
   void implicitMSubstituteB();
   void implicitPSubstituteB();
 
-  // void yeeUpdate();
+  void yeeUpdate();
 
   void timeStep();
   // void printField(std::string msg);
 
   void dumpFields(std::string filename);
+  void dumpTimings(unsigned long* timings, hsize_t total_timings, unsigned int steps_per_timing);
 };
 
 template<int m, int n, int l, typename T>

@@ -21,6 +21,7 @@ public:
 			unsigned int block_size,
 			mpi::communicator& world);
   virtual void doLines(double** theLines)=0;
+  virtual std::string getAlgName()=0;
 
   unsigned int nLines;
   ReducedRHSFactory theFactory;
@@ -45,6 +46,7 @@ public:
 
   void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void doLines(double** theLines);
+  std::string getAlgName();
 private:
   double* sendbuf;
   double* recvbuf;
@@ -59,6 +61,7 @@ public:
 
   void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void doLines(double** theLines);
+  std::string getAlgName();
 
 private:
   double* sendbuf;
@@ -74,6 +77,7 @@ public:
 
   void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void doLines(double** theLines);
+  std::string getAlgName();
 
 private:
   double* sendbuf;
@@ -99,6 +103,7 @@ public:
   void doReducedSystems(std::vector<AbstractReducedRHS*>& red_rhss);
   void dumpLine(unsigned int il, mpi::communicator& world);
   void doLines(double** theLines);
+  std::string getAlgName();
 private:
   double* sendbuf;
   double* recvbuf;
@@ -111,6 +116,7 @@ public:
 			   unsigned int block_size,
 			   mpi::communicator& world);
   void doLines(double** theLines);
+  std::string getAlgName();
 private:
   std::vector<mpi::request> sendreqs;
   std::vector<std::vector<mpi::request> > recvreqs;
