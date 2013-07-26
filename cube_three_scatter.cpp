@@ -30,7 +30,7 @@ int main(int argc, char* argv []) {
 	 block_size);
 
   double simulation_time=10*sqrt(2)*(.1)/LIGHTSPEED; // Run for 10 periods
-  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 10000,
+  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 1000,
 			      n_procs, n_procs, n_procs, block_size, dump_directory, & init, world);
 
   the_simulation.simulate(false, 100, 10);

@@ -211,7 +211,7 @@ void Simulation3D::dumpTimings(unsigned long* timings, hsize_t total_timings,
 #ifndef YEE
   status = H5Awrite(alg_attr_id, atype, xUpdateRHSs->getAlgName().c_str());
 #else
-  status H5Awrite(alg_attr_id, atype, "Yee");
+  status = H5Awrite(alg_attr_id, atype, "Yee");
 #endif
 
   H5Sclose(timingspace); H5Sclose(dx_space); H5Sclose(dt_space);

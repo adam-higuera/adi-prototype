@@ -186,3 +186,9 @@ cube-three-scatter: cube_three_scatter.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 
 cube-three-scatter-dump: cube_three_scatter_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-yee: cube_collective.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -DYEE -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-yee-dump: cube_collective_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -DYEE -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
