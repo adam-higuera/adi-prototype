@@ -411,69 +411,67 @@ void Simulation3D::implicitUpdateP() {
 
 void Simulation3D::explicitUpdateP() {
   getGuardF(B, guardB, UPWARDS);
-  
-  // update B
+
+  // set guard pointers
   double* guardEXH = guardE[0][1]; double* guardEYH = guardE[1][1]; double* guardEZH = guardE[2][1];
+  double* guardBXL = guardB[0][0]; double* guardBYL = guardB[1][0]; double* guardBZL = guardB[2][0];
+
+  // dz update (B_x couples witha d E_y / dz)
   for(unsigned int ix=0; ix < blockSize; ix++) {
     for(unsigned int iy = 0; iy < blockSize; iy++) {
+      double lastB = guardBZL[(blockSize*ix + iy)*3];
+      double lastE;
       for(unsigned int iz = 0; iz < blockSize; iz++) {
 	unsigned int offset = ((ix*blockSize + iy)*blockSize + iz)*3;
-	unsigned int offset_xp1 = (((ix+1)*blockSize + iy)*blockSize + iz)*3;
-	unsigned int offset_yp1 = ((ix*blockSize + (iy+1))*blockSize + iz)*3;
 	unsigned int offset_zp1 = ((ix*blockSize + iy)*blockSize + (iz+1))*3;
 
-	for(unsigned int i=0; i < 3; i++) tmp_field[offset + i] = B[offset + i];
-
-	// B_x couples with d E_y / dz
-	if(iz + 1 < blockSize)
-	  B[offset] += preFactorZ*(E[offset_zp1 + 1] - E[offset + 1]);
+	lastE = E[offset + 1];
+	E[offset + 1] += preFactorZ*(B[offset] - lastB);
+	lastB = B[offset];
+	if(iz + 1 != blockSize)
+	  B[offset] += preFactorZ*(E[offset_zp1 + 1] - lastE);
 	else
-	  B[offset] += preFactorZ*(guardEZH[(blockSize*ix + iy)*3 + 1] - E[offset + 1]);
-
-	// B_y couples d E_z / dx
-	if(ix + 1 < blockSize)
-	  B[offset + 1] += preFactorX*(E[offset_xp1 + 2] - E[offset + 2]);
-	else
-	  B[offset + 1] += preFactorX*(guardEXH[(blockSize*iy + iz)*3 + 2] - E[offset + 2]);
-
-	// B_z couples with d E_x / dy
-	if(iy + 1 < blockSize)
-	  B[offset + 2] += preFactorY*(E[offset_yp1] - E[offset]);
-	else
-	  B[offset + 2] += preFactorY*(guardEYH[(blockSize*ix + iz)*3] - E[offset]);
+	  B[offset] += preFactorZ*(guardEZH[(blockSize*ix + iy)*3 + 1] - lastE);
       }
     }
   }
 
-  // update E
-  double* guardBXL = guardB[0][0]; double* guardBYL = guardB[1][0]; double* guardBZL = guardB[2][0];
-  double* guardBXH = guardB[0][1]; double* guardBYH = guardB[1][1]; double* guardBZH = guardB[2][1];
-  for(unsigned int ix=0; ix < blockSize; ix++) {
-    for(unsigned int iy = 0; iy < blockSize; iy++) {
-      for(unsigned int iz = 0; iz < blockSize; iz++) {
+  // dx update (B_y couples with d E_z / dx)
+  for(unsigned int iy = 0; iy < blockSize; iy++) {
+    for(unsigned int iz = 0; iz < blockSize; iz++) {
+      double lastB = guardBXL[(blockSize*iy + iz)*3 + 1];
+      double lastE;
+      for(unsigned int ix = 0; ix < blockSize; ix++) {
 	unsigned int offset = ((ix*blockSize + iy)*blockSize + iz)*3;
-	unsigned int offset_xm1 = (((ix-1)*blockSize + iy)*blockSize + iz)*3;
-	unsigned int offset_ym1 = ((ix*blockSize + (iy-1))*blockSize + iz)*3;
-	unsigned int offset_zm1 = ((ix*blockSize + iy)*blockSize + (iz-1))*3;
+	unsigned int offset_xp1 = (((ix+1)*blockSize + iy)*blockSize + iz)*3;
 
-
-	// d B_x / dz couples with E_y
-	if(iz > 0)
-	  E[offset + 1] += preFactorZ*(tmp_field[offset] - tmp_field[offset_zm1]);
+	lastE = E[offset + 2];
+	E[offset + 2] += preFactorX*(B[offset + 1] - lastB);
+	lastB = B[offset + 1];
+	if(ix + 1 != blockSize)
+	  B[offset + 1] += preFactorX*(E[offset_xp1 + 2] - lastE);
 	else
-	  E[offset + 1] += preFactorZ*(tmp_field[offset] - guardBZL[(blockSize*ix + iy)*3]);
+	  B[offset + 1] += preFactorX*(guardEXH[(blockSize*iy + iz)*3 + 2] - lastE);
+      }
+    }
+  }
 
-	// d B_y / dx couples with E_z
-	if(ix > 0)
-	  E[offset + 2] += preFactorX*(tmp_field[offset + 1] - tmp_field[offset_xm1 + 1]);
-	else
-	  E[offset + 2] += preFactorX*(tmp_field[offset + 1] - guardBXL[(blockSize*iy + iz)*3 + 1]);
+  // dy update (B_z couples with d E_x / dy)
+  for(unsigned int ix = 0; ix < blockSize; ix++) {
+    for(unsigned int iz = 0; iz < blockSize; iz++) {
+      double lastB = guardBYL[(blockSize*ix + iz)*3 + 2];
+      double lastE;
+      for(unsigned int iy = 0; iy < blockSize; iy++) {
+	unsigned int offset = ((ix*blockSize + iy)*blockSize + iz)*3;
+	unsigned int offset_yp1 = ((ix*blockSize + (iy+1))*blockSize + iz)*3;
 
-	// d B_z / dy couples with E_x
-	if(iy > 0)
-	  E[offset] += preFactorY*(tmp_field[offset + 2] - tmp_field[offset_ym1 + 2]);
+	lastE = E[offset];
+	E[offset] += preFactorY*(B[offset + 2] - lastB);
+	lastB = B[offset + 2];
+	if(iy + 1 != blockSize)
+	  B[offset + 2] += preFactorY*(E[offset_yp1] - lastE);
 	else
-	  E[offset] += preFactorY*(tmp_field[offset + 2] - guardBYL[(blockSize*ix + iz)*3 + 2]);
+	  B[offset + 2] += preFactorY*(guardEYH[(blockSize*ix + iz)*3] - lastE);
       }
     }
   }
