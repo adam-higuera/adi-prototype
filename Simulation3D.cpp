@@ -143,6 +143,7 @@ void Simulation3D::simulate(bool dump, unsigned int dump_periodicity, unsigned i
 
   unsigned int steps_per_timing = 100;
   unsigned long* timings = new unsigned long[nSteps / steps_per_timing];
+  double* center_e_fields = new double[nSteps];
 
   std::cout << std::setprecision(10);
   for(currentStep=0; currentStep <= nSteps; currentStep++) {
@@ -160,12 +161,49 @@ void Simulation3D::simulate(bool dump, unsigned int dump_periodicity, unsigned i
 	// std::cout << 1000000*(t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec) << std::endl;
       t1=t2;
     }
+    if (xLine.rank() == 1 && yLine.rank() == 1) { // FIXME - GENERALIZE
+      center_e_fields[currentStep] = E[(blockSize*blockSize*blockSize/2 + blockSize*blockSize/2 + blockSize/2)*3];
+    }
     if(currentStep < nSteps)
       this->timeStep();
   }
 
   if(world.rank() == 0)
     dumpTimings(timings, nSteps / steps_per_timing, steps_per_timing);
+
+  if(xLine.rank() == 1 && yLine.rank() == 1)
+    dumpCenterFields(center_e_fields, nSteps);
+
+  delete[] timings;
+  delete[] center_e_fields;
+}
+
+void Simulation3D::dumpCenterFields(double* eFields, hsize_t nSteps) {
+  std::ostringstream filename(std::ios::out);
+  filename << dumpDir << "/center_fields_dx" << dx << "_dt" << dt << ".h5";
+  
+  hid_t file_id=H5Fcreate(filename.str().c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+  hid_t fieldspace=H5Screate_simple(1, & nSteps, NULL);
+  hid_t dx_space = H5Screate(H5S_SCALAR);
+  hid_t dt_space = H5Screate(H5S_SCALAR);
+
+  hid_t field_dset_id = H5Dcreate(file_id, "timings", H5T_NATIVE_DOUBLE, fieldspace,
+				   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t dx_attr_id = H5Acreate(field_dset_id, "dx", H5T_NATIVE_DOUBLE, dx_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+  hid_t dt_attr_id = H5Acreate(field_dset_id, "dt", H5T_NATIVE_DOUBLE, dt_space,
+			       H5P_DEFAULT, H5P_DEFAULT);
+
+  herr_t status = H5Dwrite(field_dset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
+			   H5P_DEFAULT, eFields);
+  status = H5Awrite(dx_attr_id, H5T_NATIVE_DOUBLE, & dx);
+  status = H5Awrite(dt_attr_id, H5T_NATIVE_DOUBLE, & dt);
+
+  H5Sclose(fieldspace); H5Sclose(dx_space); H5Sclose(dt_space);
+  H5Aclose(dx_attr_id); H5Aclose(dt_attr_id);
+  H5Dclose(field_dset_id);
+  H5Fclose(file_id);
 }
 
 void Simulation3D::dumpTimings(unsigned long* timings, hsize_t total_timings,
