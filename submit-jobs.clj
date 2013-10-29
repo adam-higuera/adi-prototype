@@ -14,12 +14,13 @@
 ;     (str "-l nodes=" edge-procs ":ppn=" edge-procs)
 ;     (str "-l nodes=" (quot (expt edge-procs 2) 8) ":ppn=8+1:ppn=" (rem (expt edge-procs 2) 8))))
 
-(defn get-resource-list [edge-procs n-procs dims]                                                              (let [procs (expt edge-procs dims)
+(defn get-resource-list [edge-procs n-procs dims]
+  (let [procs (expt edge-procs dims)
         remainder (rem procs n-procs)
         rem-string (if (== 0 remainder) "" (str "+1:ppn=" remainder))]
-                                                                                                                 (if (> (quot procs n-procs) 0)
-                                                                                                                   (str "-l nodes=" (quot procs n-procs) ":ppn=" n-procs rem-string)
-                                                                                                                   (str "-l nodes=1:ppn=" (rem procs n-procs)))))
+    (if (> (quot procs n-procs) 0)
+      (str "-l nodes=" (quot procs n-procs) ":ppn=" n-procs rem-string)
+      (str "-l nodes=1:ppn=" (rem procs n-procs)))))
 
 (defn submit-job [domain-size edge-procs executable results-directory q procs-per-node script-name dims time-steps wall-time]
   (let [exec-name (re-find #"[^/]*$" executable)]

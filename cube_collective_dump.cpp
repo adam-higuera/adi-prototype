@@ -17,8 +17,10 @@ int main(int argc, char* argv []) {
 
   char *domain_size = std::getenv("DOMAIN_SIZE");
   char *dump_dir = std::getenv("RESULTS_DIR");
+  char *n_steps_str = std::getenv("NUM_STEPS");
 
   unsigned int block_size = domain_size ? std::atoi(domain_size) : 50;
+  unsigned int n_steps = n_steps_str ? std::atoi(n_steps_str) : 100;
   std::string dump_directory = dump_dir ? std::string(dump_dir) : std::string("");
 
   if (world.rank() == 0)
@@ -29,9 +31,9 @@ int main(int argc, char* argv []) {
     init(.1/n_cells, .1/n_cells, .1/n_cells, .1, .1, .1,
 	 block_size);
 
-  double simulation_time=10*sqrt(2)*(.1)/LIGHTSPEED/1.0; // Run for 10 periods
-  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 100,
+  double simulation_time=2.0*sqrt(2)*(.1)/LIGHTSPEED/1.0; // Run for 10 periods
+  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, n_steps,
 			      n_procs, n_procs, n_procs, block_size, dump_directory, & init, world);
 
-  the_simulation.simulate(true, 10, 10);
+  the_simulation.simulate(true, n_steps / 100 == 0 ? 1 : n_steps / 100, 100);
 }

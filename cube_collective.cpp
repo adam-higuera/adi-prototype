@@ -17,20 +17,22 @@ int main(int argc, char* argv []) {
 
   char *domain_size = std::getenv("DOMAIN_SIZE");
   char *dump_dir = std::getenv("RESULTS_DIR");
+  char *n_steps_str = std::getenv("NUM_STEPS");
 
   unsigned int block_size = domain_size ? std::atoi(domain_size) : 50;
+  unsigned int n_steps = n_steps_str ? std::atoi(n_steps_str) : 100;  
   std::string dump_directory = dump_dir ? std::string(dump_dir) : std::string("");
 
   if (world.rank() == 0)
     std::cout << "domain_size: " << block_size << std::endl;
   unsigned int n_procs = static_cast<unsigned int>(pow(world.size(), 1.0/3.0));
   unsigned int n_cells = block_size*n_procs;
-  TEmnlInitializer<1,1,1, CollectiveRHSCollection>
+  ShiftedTEmnlInitializer<1,1,1, CollectiveRHSCollection>
     init(.1/n_cells, .1/n_cells, .1/n_cells, .1, .1, .1,
 	 block_size);
 
-  double simulation_time=10*sqrt(2)*(.1)/LIGHTSPEED; // Run for 10 periods
-  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, 1000,
+  double simulation_time=2.0*sqrt(2)*(.1)/LIGHTSPEED; // Run for 10 periods
+  Simulation3D the_simulation(.1, .1, .1, simulation_time, n_cells, n_steps,
 			      n_procs, n_procs, n_procs, block_size, dump_directory, & init, world);
 
   the_simulation.simulate(false, 100, 10);
