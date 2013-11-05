@@ -382,19 +382,27 @@ double*** Simulation3D::allocateGuardStorage() {
 void Simulation3D::timeStep() {
   std::ostringstream filename(std::ios::out);
 #ifndef YEE
+#ifndef NO_IMPLICIT_SOLVE
   implicitUpdateM();
+#endif
   // filename << dumpDir << "/post_impM" << currentStep << ".h5";
   // dumpFields(filename.str());
   // filename.str("");
+#ifndef NO_EXPLICIT_SOLVE
   explicitUpdateP();
+#endif
   // filename << dumpDir << "/post_expP" << currentStep << ".h5";
   // dumpFields(filename.str());
   // filename.str("");
+#ifndef NO_IMPLICIT_SOLVE
   implicitUpdateP();
+#endif
   // filename << dumpDir << "/post_impP" << currentStep << ".h5";
   // dumpFields(filename.str());
   // filename.str("");
+#ifndef NO_EXPLICIT_SOLVE
   explicitUpdateM();
+#endif
   // filename << dumpDir << "/post_expM" << currentStep << ".h5";
   // dumpFields(filename.str());
 #else
@@ -405,7 +413,9 @@ void Simulation3D::timeStep() {
 void Simulation3D::implicitUpdateM() {
   std::ostringstream filename(std::ios::out);
 
+#ifndef TOTAL_REDUCED_ONLY
   populateRHSM();
+#endif
 
   // filename << dumpDir << "/PreTD" << currentStep << ".h5";
   // dumpFields(filename.str());
@@ -415,6 +425,7 @@ void Simulation3D::implicitUpdateM() {
   yUpdateRHSs->doLines(rhs_ptrs_y);
   zUpdateRHSs->doLines(rhs_ptrs_z);
 
+#ifndef TOTAL_REDUCED_ONLY
   writeRHSM();
 
   // filename << dumpDir << "/PostTD" << currentStep << ".h5";
@@ -424,15 +435,16 @@ void Simulation3D::implicitUpdateM() {
   getGuardF(B, guardB, UPWARDS);
   implicitMSubstituteB();
   getGuardF(E, guardE, DOWNWARDS);
-
+#endif
   // filename << dumpDir << "/post_Subst.h5";
   // dumpFields(filename.str());
 }
 
 void Simulation3D::implicitUpdateP() {
   std::ostringstream filename(std::ios::out);
+#ifndef TOTAL_REDUCED_ONLY
   populateRHSP();
-
+#endif
   // filename << dumpDir << "/PreTD" << currentStep << ".h5";
   // dumpFields(filename.str());
   // filename.str("");
@@ -441,10 +453,12 @@ void Simulation3D::implicitUpdateP() {
   yUpdateRHSs->doLines(rhs_ptrs_y);
   zUpdateRHSs->doLines(rhs_ptrs_z);
 
+#ifndef TOTAL_REDUCED_ONLY
   writeRHSP();
   getGuardF(B, guardB, UPWARDS);
   implicitPSubstituteB();
   getGuardF(E, guardE, DOWNWARDS);
+#endif
 }
 
 void Simulation3D::explicitUpdateP() {

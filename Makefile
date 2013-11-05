@@ -178,11 +178,23 @@ accuracy-check: accuracy_check.cpp ${HEADERS} ${SRC_FILES}
 cube-collective: cube_collective.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
 
+cube-collective-total-reduced-only: cube_collective.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${TOTAL_REDUCED_ONLY_FLAGS} ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-collective-everything-else: cube_collective.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${EVERYTHING_ELSE_FLAGS} ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
 cube-collective-dump: cube_collective_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
 
 cube-three-scatter: cube_three_scatter.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-three-scatter-everything-else: cube_three_scatter.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${EVERYTHING_ELSE_FLAGS} ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
+
+cube-three-scatter-total-reduced-only: cube_three_scatter.cpp ${HEADERS_3D} ${SRC_FILES_3D}
+	${COMPILER} -g -o $@ ${TOTAL_REDUCED_ONLY_FLAGS} ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
 
 cube-three-scatter-dump: cube_three_scatter_dump.cpp ${HEADERS_3D} ${SRC_FILES_3D}
 	${COMPILER} -g -o $@ ${LIB_DIR} ${INC_DIR} $< ${SRC_FILES_3D} ${LIBS_3D}
